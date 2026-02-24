@@ -1,0 +1,52 @@
+[project]
+name = "ast-audio-classifier"
+version = "0.1.0"
+description = "AST Audio Classifier - Docker sidecar for Home Assistant audio event detection"
+authors = [
+    {name = "James Snyder"}
+]
+requires-python = ">=3.11"
+dependencies = [
+    "transformers>=4.36.0",
+    # torch and torchaudio installed separately from CPU-only index (see Dockerfile)
+    "paho-mqtt>=1.6.0,<2.0.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "python-multipart>=0.0.6",
+    "pyyaml>=6.0",
+    "numpy>=1.24.0",
+    "librosa>=0.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "ARG", "PLR2004"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src"]

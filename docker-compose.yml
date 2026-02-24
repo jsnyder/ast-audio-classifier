@@ -1,0 +1,20 @@
+services:
+  ast-audio-classifier:
+    build: .
+    image: ast-audio-classifier:latest
+    container_name: ast-audio-classifier
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    environment:
+      - CONFIG_PATH=/config/config.yaml
+      - LOG_LEVEL=INFO
+      # Credentials injected from Bitwarden via env vars.
+      # config.yaml uses ${VAR} substitution for these.
+      # See: bw get item "AST Audio Classifier" --field mqtt_password
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - OO_USERNAME=${OO_USERNAME:-}
+      - OO_PASSWORD=${OO_PASSWORD:-}
+    # Health check defined in Dockerfile
+    # Port 8080 exposed via host networking

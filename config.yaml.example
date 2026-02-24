@@ -1,0 +1,52 @@
+# AST Audio Classifier Configuration
+# Copy to config.yaml and fill in your values.
+#
+# When running as an HA addon, this file is auto-generated from addon options.
+# When running as standalone Docker, edit this file directly.
+
+mqtt:
+  host: "core-mosquitto"          # MQTT broker host (or IP)
+  port: 1883
+  username: "ast_classifier"      # Dedicated Mosquitto local login
+  password: "${MQTT_PASSWORD}"    # From Bitwarden: bw get item "AST Audio Classifier MQTT"
+
+cameras:
+  # RTSP URLs: Use Scrypted's per-camera RTSP ports (not go2rtc rebroadcast).
+  # Each camera has a unique port and stream ID from Scrypted.
+  # Find URLs in /config/go2rtc.yaml on the HA host.
+  - name: "living_room"
+    rtsp_url: "rtsp://user:pass@192.168.0.107:37858/stream_id"
+    db_threshold: -40             # Indoor, quiet environment
+    cooldown_seconds: 15
+
+  - name: "back_porch"
+    rtsp_url: "rtsp://user:pass@192.168.0.107:41485/stream_id"
+    db_threshold: -35             # Covered outdoor
+    cooldown_seconds: 10
+
+  - name: "backyard"
+    rtsp_url: "rtsp://user:pass@192.168.0.107:36043/stream_id"
+    db_threshold: -30             # Open outdoor, more ambient noise
+    battery: true                 # Battery camera — longer reconnect interval
+    reconnect_interval: 60
+
+  - name: "front_door"
+    rtsp_url: "rtsp://user:pass@192.168.0.107:36161/stream_id"
+    db_threshold: -35             # Outdoor, good for doorbell/knock/speech
+    cooldown_seconds: 10
+
+# Optional: Direct structured logging to OpenObserve
+# Adds first-class queryable fields (camera, group, confidence, db_level)
+# on top of what Fluent Bit captures from stdout.
+openobserve:
+  host: "192.168.1.63"
+  port: 5080
+  org: "default"
+  stream: "ast_audio"
+  username: "${OO_USERNAME}"       # From Bitwarden: bw get item "OpenObserve" --field username
+  password: "${OO_PASSWORD}"       # From Bitwarden: bw get item "OpenObserve" --field password
+
+defaults:
+  confidence_threshold: 0.15      # Minimum AST confidence to trigger
+  auto_off_seconds: 30            # Binary sensor auto-off delay in HA
+  clip_duration_seconds: 3        # Audio clip length for classification

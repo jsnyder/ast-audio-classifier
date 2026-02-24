@@ -1,0 +1,56 @@
+name: AST Audio Classifier
+version: "0.1.0"
+slug: ast-audio-classifier
+description: Audio Spectrogram Transformer sidecar for RTSP audio classification with MQTT auto-discovery
+url: https://github.com/jsnyder/home_assistant
+arch:
+  - amd64
+init: false
+startup: application
+boot: auto
+host_network: true
+hassio_api: true
+hassio_role: manager
+
+map:
+  - config:rw
+
+options:
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  cameras: []
+  confidence_threshold: 0.15
+  auto_off_seconds: 30
+  clip_duration_seconds: 3
+  log_level: "info"
+  openobserve_host: ""
+  openobserve_port: 5080
+  openobserve_org: "default"
+  openobserve_stream: "ast_audio"
+  openobserve_username: ""
+  openobserve_password: ""
+
+schema:
+  mqtt_host: str
+  mqtt_port: port
+  mqtt_username: str
+  mqtt_password: password
+  cameras:
+    - name: str
+      rtsp_url: str
+      db_threshold: "float?"
+      cooldown_seconds: "int?"
+      battery: "bool?"
+      reconnect_interval: "int?"
+  confidence_threshold: "float?"
+  auto_off_seconds: "int?"
+  clip_duration_seconds: "int?"
+  log_level: "list(debug|info|warning|error)?"
+  openobserve_host: "str?"
+  openobserve_port: "port?"
+  openobserve_org: "str?"
+  openobserve_stream: "str?"
+  openobserve_username: "str?"
+  openobserve_password: "password?"
