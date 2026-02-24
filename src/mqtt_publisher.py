@@ -183,22 +183,47 @@ class MqttPublisher:
         mapping = {
             "smoke_alarm": "smoke",
             "glass_break": "safety",
-            "doorbell": "occupancy",
+            "water_leak": "moisture",
         }
         return mapping.get(group, "sound")
 
     @staticmethod
     def _icon_for_group(group: str) -> str:
         icons = {
-            "dog_bark": "mdi:dog",
-            "cat_meow": "mdi:cat",
-            "baby_cry": "mdi:baby-face-outline",
+            # Safety & security
             "smoke_alarm": "mdi:smoke-detector-variant",
             "glass_break": "mdi:glass-fragile",
-            "doorbell": "mdi:doorbell",
-            "speech": "mdi:account-voice",
             "siren": "mdi:alarm-light",
-            "knock": "mdi:door",
+            "gunshot_explosion": "mdi:pistol",
+            "screaming": "mdi:account-alert",
+            # People & pets
+            "dog_bark": "mdi:dog",
+            "cat_meow": "mdi:cat",
+            "crying": "mdi:emoticon-cry-outline",
+            "speech": "mdi:account-voice",
+            "cough_sneeze": "mdi:account-alert-outline",
+            "footsteps": "mdi:shoe-print",
+            # Doors & entry
+            "doorbell": "mdi:doorbell",
+            "knock": "mdi:door-closed",
+            "door": "mdi:door",
+            "cabinet": "mdi:cupboard-outline",
+            # Environment
+            "rain_storm": "mdi:weather-pouring",
+            "music": "mdi:music",
+            "vehicle": "mdi:car",
+            "car_horn": "mdi:bugle",
+            # Household
+            "vacuum_cleaner": "mdi:robot-vacuum",
+            "water_running": "mdi:water",
+            "kitchen_appliance": "mdi:stove",
+            "power_tools": "mdi:saw-blade",
+            "alarm_beep": "mdi:alarm-note",
+            # Equipment monitoring
+            "hvac_mechanical": "mdi:hvac",
+            "mechanical_anomaly": "mdi:alert-circle-outline",
+            "water_leak": "mdi:water-alert",
+            "electrical_anomaly": "mdi:flash-alert",
         }
         return icons.get(group, "mdi:waveform")
 
