@@ -53,11 +53,9 @@ async def start_ffmpeg(rtsp_url: str) -> asyncio.subprocess.Process:
         "-rtsp_transport",
         "tcp",
         "-allowed_media_types",
-        "audio",  # Only subscribe to audio track (avoids video buffer overflow)
+        "audio",
         "-timeout",
-        "10000000",  # 10s RTSP connection timeout (microseconds)
-        "-stimeout",
-        "10000000",  # 10s socket timeout (microseconds)
+        "10000000",  # 10s RTSP timeout (microseconds)
         "-i",
         rtsp_url,
         "-vn",

@@ -20,6 +20,7 @@ from . import __version__
 from .classifier import ASTClassifier
 from .config import load_config
 from .mqtt_publisher import MqttPublisher
+from .labels import LABEL_GROUPS
 from .stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
         cameras = sm.status() if sm else []
         online = sum(1 for c in cameras if c["state"] == "streaming")
 
+        # Include ambient dB info per camera for diagnostics
+        ambient_info = {}
+        if sm:
+            for stream in sm.streams:
+                amb = stream._ambient
+                ambient_info[stream.camera_name] = {
+                    "peak_db": round(amb.peak_db, 1),
+                    "chunk_count": amb.chunk_count,
+                    "threshold": stream._camera.db_threshold,
+                }
+
         return JSONResponse(
             content={
                 "version": __version__,
@@ -143,6 +155,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "cameras": cameras,
                 "cameras_online": f"{online}/{len(cameras)}",
                 "total_inferences": sum(c["inference_count"] for c in cameras),
+                "label_groups_count": len(LABEL_GROUPS),
+                "ambient": ambient_info,
             }
         )
 
