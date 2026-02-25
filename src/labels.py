@@ -752,6 +752,14 @@ LABEL_GROUPS: dict[str, list[str]] = {
         "Air horn, truck horn",
         "Car alarm",
     ],
+    "aircraft": [
+        "Aircraft",
+        "Aircraft engine",
+        "Jet engine",
+        "Propeller, airscrew",
+        "Helicopter",
+        "Fixed-wing aircraft, airplane",
+    ],
     # --- Household ---
     "vacuum_cleaner": [
         "Vacuum cleaner",

@@ -39,10 +39,23 @@ class OpenObserveConfig:
 
 
 @dataclass
+class CLAPConfig:
+    enabled: bool = True
+    model: str = "laion/clap-htsat-fused"
+    confirm_threshold: float = 0.25
+    suppress_threshold: float = 0.15
+    override_threshold: float = 0.40
+    discovery_threshold: float = 0.50
+    never_suppress: list[str] | None = None
+    custom_prompts: dict[str, list[str]] | None = None
+
+
+@dataclass
 class AppConfig:
     mqtt: MqttConfig
     cameras: list[CameraConfig]
     openobserve: OpenObserveConfig | None = None
+    clap: CLAPConfig | None = None
     confidence_threshold: float = 0.15
     auto_off_seconds: int = 30
     clip_duration_seconds: int = 3
@@ -112,11 +125,20 @@ def load_config(path: str) -> AppConfig:
     if "openobserve" in raw:
         openobserve = OpenObserveConfig(**raw["openobserve"])
 
+    clap = None
+    if "clap" in raw:
+        clap_raw = dict(raw["clap"])
+        # Convert never_suppress list from YAML to the dataclass field
+        if "never_suppress" in clap_raw and isinstance(clap_raw["never_suppress"], list):
+            clap_raw["never_suppress"] = clap_raw["never_suppress"]
+        clap = CLAPConfig(**clap_raw)
+
     defaults = raw.get("defaults", {})
     return AppConfig(
         mqtt=mqtt,
         cameras=cameras,
         openobserve=openobserve,
+        clap=clap,
         confidence_threshold=defaults.get("confidence_threshold", 0.15),
         auto_off_seconds=defaults.get("auto_off_seconds", 30),
         clip_duration_seconds=defaults.get("clip_duration_seconds", 3),

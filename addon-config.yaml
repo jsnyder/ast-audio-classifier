@@ -31,6 +31,12 @@ options:
   openobserve_stream: "ast_audio"
   openobserve_username: ""
   openobserve_password: ""
+  clap_enabled: false
+  clap_model: "laion/clap-htsat-fused"
+  clap_confirm_threshold: 0.25
+  clap_suppress_threshold: 0.15
+  clap_override_threshold: 0.40
+  clap_discovery_threshold: 0.50
 
 schema:
   mqtt_host: str
@@ -54,3 +60,9 @@ schema:
   openobserve_stream: "str?"
   openobserve_username: "str?"
   openobserve_password: "password?"
+  clap_enabled: "bool?"
+  clap_model: "str?"
+  clap_confirm_threshold: "float?"
+  clap_suppress_threshold: "float?"
+  clap_override_threshold: "float?"
+  clap_discovery_threshold: "float?"

@@ -110,6 +110,34 @@ YAML
         fi
     fi
 
+    # CLAP verification (optional)
+    CLAP_ENABLED=$(jq -r '.clap_enabled // false' "$OPTIONS_FILE")
+    if [ "$CLAP_ENABLED" = "true" ]; then
+        CLAP_MODEL=$(jq -r '.clap_model // "laion/clap-htsat-fused"' "$OPTIONS_FILE")
+        CLAP_CONFIRM=$(jq -r '.clap_confirm_threshold // 0.25' "$OPTIONS_FILE")
+        CLAP_SUPPRESS=$(jq -r '.clap_suppress_threshold // 0.15' "$OPTIONS_FILE")
+        CLAP_OVERRIDE=$(jq -r '.clap_override_threshold // 0.40' "$OPTIONS_FILE")
+        CLAP_DISCOVERY=$(jq -r '.clap_discovery_threshold // 0.50' "$OPTIONS_FILE")
+
+        cat >> "$CONFIG_PATH" <<YAML
+
+clap:
+  enabled: true
+  model: "${CLAP_MODEL}"
+  confirm_threshold: ${CLAP_CONFIRM}
+  suppress_threshold: ${CLAP_SUPPRESS}
+  override_threshold: ${CLAP_OVERRIDE}
+  discovery_threshold: ${CLAP_DISCOVERY}
+YAML
+
+        # Custom prompts (optional JSON object)
+        CLAP_PROMPTS=$(jq -r '.clap_custom_prompts // empty' "$OPTIONS_FILE" 2>/dev/null)
+        if [ -n "$CLAP_PROMPTS" ] && [ "$CLAP_PROMPTS" != "null" ]; then
+            echo "  custom_prompts:" >> "$CONFIG_PATH"
+            echo "$CLAP_PROMPTS" | jq -r 'to_entries[] | "    \(.key):\n" + (.value | map("      - \"\(.)\"") | join("\n"))' >> "$CONFIG_PATH"
+        fi
+    fi
+
     # Defaults
     cat >> "$CONFIG_PATH" <<YAML
 

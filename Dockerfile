@@ -32,6 +32,10 @@ RUN uv pip install --system --no-cache \
 # This avoids runtime downloads and makes the image air-gapped compatible
 RUN python -c "from transformers import pipeline; pipeline('audio-classification', model='MIT/ast-finetuned-audioset-10-10-0.4593', device=-1)"
 
+# Pre-download CLAP model at build time (~150MB)
+# Used for zero-shot verification of AST classifications
+RUN python -c "from transformers import pipeline; pipeline('zero-shot-audio-classification', model='laion/clap-htsat-fused', device=-1)"
+
 # Copy startup script
 COPY run.sh /
 RUN chmod a+x /run.sh
@@ -39,9 +43,9 @@ RUN chmod a+x /run.sh
 # Note: HA addons run in sandboxed containers, non-root conflicts with supervisor
 # For standalone use, uncomment: RUN useradd -m -r appuser && USER appuser
 
-# Health check — long start period for model loading
+# Health check — long start period for model loading (AST + CLAP)
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["/run.sh"]

@@ -6,6 +6,7 @@ import yaml
 from src.config import (
     AppConfig,
     CameraConfig,
+    CLAPConfig,
     MqttConfig,
     OpenObserveConfig,
     load_config,
@@ -228,3 +229,95 @@ class TestLoadConfig:
 
         cfg = load_config(str(cfg_file))
         assert cfg.openobserve is None
+
+
+class TestCLAPConfig:
+    def test_defaults(self):
+        cfg = CLAPConfig()
+        assert cfg.enabled is True
+        assert cfg.model == "laion/clap-htsat-fused"
+        assert cfg.confirm_threshold == 0.25
+        assert cfg.suppress_threshold == 0.15
+        assert cfg.override_threshold == 0.40
+        assert cfg.discovery_threshold == 0.50
+        assert cfg.never_suppress is None
+        assert cfg.custom_prompts is None
+
+    def test_custom(self):
+        cfg = CLAPConfig(
+            enabled=True,
+            confirm_threshold=0.30,
+            never_suppress=["smoke_alarm", "glass_break"],
+            custom_prompts={"vacuum_cleaner": ["a roomba running"]},
+        )
+        assert cfg.confirm_threshold == 0.30
+        assert cfg.never_suppress == ["smoke_alarm", "glass_break"]
+        assert cfg.custom_prompts["vacuum_cleaner"] == ["a roomba running"]
+
+
+class TestLoadConfigCLAP:
+    def test_load_with_clap(self, tmp_path):
+        cfg_data = {
+            **MINIMAL_CONFIG,
+            "clap": {
+                "enabled": True,
+                "model": "laion/clap-htsat-fused",
+                "confirm_threshold": 0.30,
+                "suppress_threshold": 0.10,
+                "override_threshold": 0.45,
+                "discovery_threshold": 0.55,
+                "never_suppress": ["smoke_alarm", "glass_break", "siren"],
+                "custom_prompts": {
+                    "vacuum_cleaner": [
+                        "a robot vacuum cleaner running",
+                        "a vacuum cleaner motor",
+                    ],
+                },
+            },
+        }
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        cfg = load_config(str(cfg_file))
+        assert cfg.clap is not None
+        assert cfg.clap.enabled is True
+        assert cfg.clap.confirm_threshold == 0.30
+        assert cfg.clap.suppress_threshold == 0.10
+        assert cfg.clap.override_threshold == 0.45
+        assert cfg.clap.discovery_threshold == 0.55
+        assert cfg.clap.never_suppress == ["smoke_alarm", "glass_break", "siren"]
+        assert len(cfg.clap.custom_prompts["vacuum_cleaner"]) == 2
+
+    def test_load_clap_disabled(self, tmp_path):
+        cfg_data = {
+            **MINIMAL_CONFIG,
+            "clap": {"enabled": False},
+        }
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        cfg = load_config(str(cfg_file))
+        assert cfg.clap is not None
+        assert cfg.clap.enabled is False
+
+    def test_load_without_clap(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
+
+        cfg = load_config(str(cfg_file))
+        assert cfg.clap is None
+
+    def test_load_clap_minimal(self, tmp_path):
+        """CLAP section with only enabled=true should use all defaults."""
+        cfg_data = {
+            **MINIMAL_CONFIG,
+            "clap": {"enabled": True},
+        }
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        cfg = load_config(str(cfg_file))
+        assert cfg.clap is not None
+        assert cfg.clap.enabled is True
+        assert cfg.clap.model == "laion/clap-htsat-fused"
+        assert cfg.clap.confirm_threshold == 0.25

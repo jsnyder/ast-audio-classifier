@@ -68,6 +68,7 @@ class TestLabelGroups:
             "music",
             "vehicle",
             "car_horn",
+            "aircraft",
             # Household
             "vacuum_cleaner",
             "water_running",

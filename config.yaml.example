@@ -46,6 +46,34 @@ openobserve:
   username: "${OO_USERNAME}"       # From Bitwarden: bw get item "OpenObserve" --field username
   password: "${OO_PASSWORD}"       # From Bitwarden: bw get item "OpenObserve" --field password
 
+# Optional: CLAP zero-shot verification
+# Uses CLAP (Contrastive Language-Audio Pretraining) as a second opinion
+# on AST classifications. Can suppress false positives (e.g., vacuum→music)
+# and discover sounds AST misses using custom text prompts.
+# When absent or enabled: false, system behaves exactly as before.
+# Adds ~150MB model download and ~150MB runtime memory.
+clap:
+  enabled: true
+  model: "laion/clap-htsat-fused"   # CLAP model from Hugging Face
+  confirm_threshold: 0.25           # CLAP score to confirm AST detection
+  suppress_threshold: 0.15          # Below this + strong alt = suppress
+  override_threshold: 0.40          # Alternative must score this high to suppress
+  discovery_threshold: 0.50         # CLAP-only detection threshold
+  never_suppress:                   # Safety-critical groups never suppressed
+    - smoke_alarm
+    - glass_break
+    - siren
+    - gunshot_explosion
+    - screaming
+    - crying
+  custom_prompts:                   # Additional text prompts per group
+    vacuum_cleaner:
+      - "a robot vacuum cleaner running"
+      - "a vacuum cleaner motor"
+    aircraft:
+      - "an airplane flying overhead"
+      - "a jet engine"
+
 defaults:
   confidence_threshold: 0.15      # Minimum AST confidence to trigger
   auto_off_seconds: 30            # Binary sensor auto-off delay in HA

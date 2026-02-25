@@ -41,6 +41,56 @@ class TestClassificationResult:
         assert d["confidence"] == 0.72
         assert isinstance(d["top_5"], list)
         assert d["db_level"] == -30.0
+        # CLAP fields should be omitted when None/default
+        assert "clap_verified" not in d
+        assert "clap_score" not in d
+        assert "clap_label" not in d
+        assert "source" not in d
+
+    def test_clap_fields_defaults(self):
+        result = ClassificationResult(
+            label="Dog",
+            group="dog_bark",
+            confidence=0.85,
+            top_5=[("Dog", 0.85)],
+            db_level=-25.0,
+        )
+        assert result.clap_verified is None
+        assert result.clap_score is None
+        assert result.clap_label is None
+        assert result.source == "ast"
+
+    def test_clap_fields_in_to_dict(self):
+        result = ClassificationResult(
+            label="Dog",
+            group="dog_bark",
+            confidence=0.85,
+            top_5=[("Dog", 0.85)],
+            db_level=-25.0,
+            clap_verified=True,
+            clap_score=0.72,
+            clap_label="a dog barking",
+        )
+        d = result.to_dict()
+        assert d["clap_verified"] is True
+        assert d["clap_score"] == 0.72
+        assert d["clap_label"] == "a dog barking"
+        assert "source" not in d  # Still "ast" default, omitted
+
+    def test_clap_source_in_to_dict(self):
+        result = ClassificationResult(
+            label="a vacuum cleaner running",
+            group="vacuum_cleaner",
+            confidence=0.65,
+            top_5=[],
+            db_level=-25.0,
+            clap_verified=True,
+            clap_score=0.65,
+            clap_label="a vacuum cleaner running",
+            source="clap",
+        )
+        d = result.to_dict()
+        assert d["source"] == "clap"
 
 
 class TestASTClassifier:

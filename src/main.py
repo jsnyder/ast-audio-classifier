@@ -69,6 +69,29 @@ def create_app(config_path: str | None = None) -> FastAPI:
         # Load AST model (slow — ~30-120s on modest hardware)
         app.state.classifier = ASTClassifier()
 
+        # Load CLAP verifier (optional, ~150MB model)
+        app.state.clap_verifier = None
+        if config.clap and config.clap.enabled:
+            from .clap_verifier import (
+                CLAPConfig as CLAPVerifierConfig,
+                CLAPVerifier,
+                DEFAULT_NEVER_SUPPRESS,
+            )
+
+            never_suppress = frozenset(config.clap.never_suppress) if config.clap.never_suppress else DEFAULT_NEVER_SUPPRESS
+            clap_cfg = CLAPVerifierConfig(
+                enabled=True,
+                model=config.clap.model,
+                confirm_threshold=config.clap.confirm_threshold,
+                suppress_threshold=config.clap.suppress_threshold,
+                override_threshold=config.clap.override_threshold,
+                discovery_threshold=config.clap.discovery_threshold,
+                never_suppress=never_suppress,
+                custom_prompts=config.clap.custom_prompts,
+            )
+            app.state.clap_verifier = CLAPVerifier(clap_cfg)
+            logger.info("CLAP verifier loaded")
+
         # Connect MQTT and publish discovery
         app.state.publisher = MqttPublisher(config)
         app.state.publisher.connect()
@@ -88,6 +111,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             publisher=app.state.publisher,
             confidence_threshold=config.confidence_threshold,
             clip_duration=config.clip_duration_seconds,
+            clap_verifier=app.state.clap_verifier,
         )
         app.state.stream_manager.start_all()
         app.state.start_time = time.monotonic()
@@ -106,20 +130,52 @@ def create_app(config_path: str | None = None) -> FastAPI:
             oo.close()
         logger.info("Shutdown complete")
 
+    # Grace period after startup before requiring active streams
+    STREAM_GRACE_PERIOD = 180  # seconds
+    # Max time without any stream producing audio before unhealthy
+    STREAM_STALE_THRESHOLD = 120  # seconds
+
     @app.get("/health")
     async def health(request: Request) -> JSONResponse:
         clf = getattr(request.app.state, "classifier", None)
         pub = getattr(request.app.state, "publisher", None)
+        sm = getattr(request.app.state, "stream_manager", None)
+        clap = getattr(request.app.state, "clap_verifier", None)
+        start = getattr(request.app.state, "start_time", 0)
+
         model_loaded = clf is not None and clf.loaded
         mqtt_connected = pub is not None and pub.connected
-        healthy = model_loaded and mqtt_connected
+        clap_loaded = clap is not None and clap.loaded
+
+        # Check stream health: at least one camera producing audio recently
+        now = time.monotonic()
+        uptime = now - start if start else 0
+        streams_active = 0
+        streams_total = 0
+        if sm:
+            streams_total = len(sm.streams)
+            for stream in sm.streams:
+                last = stream.last_chunk_time
+                if last > 0 and (now - last) < STREAM_STALE_THRESHOLD:
+                    streams_active += 1
+
+        # After grace period, require at least one active stream
+        past_grace = uptime > STREAM_GRACE_PERIOD
+        streams_healthy = streams_active > 0 if past_grace else True
+
+        healthy = model_loaded and mqtt_connected and streams_healthy
 
         return JSONResponse(
             status_code=200 if healthy else 503,
             content={
                 "status": "healthy" if healthy else "unhealthy",
                 "model_loaded": model_loaded,
+                "clap_loaded": clap_loaded,
                 "mqtt_connected": mqtt_connected,
+                "streams_active": streams_active,
+                "streams_total": streams_total,
+                "streams_healthy": streams_healthy,
+                "uptime_seconds": round(uptime, 1),
                 "version": __version__,
             },
         )
@@ -128,6 +184,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def status(request: Request) -> JSONResponse:
         start = getattr(request.app.state, "start_time", 0)
         clf = getattr(request.app.state, "classifier", None)
+        clap = getattr(request.app.state, "clap_verifier", None)
         pub = getattr(request.app.state, "publisher", None)
         sm = getattr(request.app.state, "stream_manager", None)
 
@@ -151,6 +208,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "version": __version__,
                 "uptime_seconds": round(uptime, 1),
                 "model_loaded": clf is not None and clf.loaded,
+                "clap_loaded": clap is not None and clap.loaded,
                 "mqtt_connected": pub is not None and pub.connected,
                 "cameras": cameras,
                 "cameras_online": f"{online}/{len(cameras)}",
@@ -217,6 +275,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
             db,
             0.05,  # Low threshold for testing
         )
+
+        # CLAP verification if available
+        clap_v = getattr(request.app.state, "clap_verifier", None)
+        if results and clap_v is not None:
+            results = await asyncio.to_thread(
+                clap_v.verify, audio, results, "upload"
+            )
 
         return JSONResponse(
             content={

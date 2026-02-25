@@ -11,9 +11,11 @@ from __future__ import annotations
 import asyncio
 import enum
 import logging
+import re
 import time
 
 from .audio_pipeline import AmbientMonitor, read_audio_clip, start_ffmpeg
+from .clap_verifier import CLAPVerifier
 from .classifier import ASTClassifier
 from .config import CameraConfig
 from .mqtt_publisher import MqttPublisher
@@ -44,6 +46,7 @@ class CameraStream:
         inference_semaphore: asyncio.Semaphore,
         confidence_threshold: float = 0.15,
         clip_duration: int = 3,
+        clap_verifier: CLAPVerifier | None = None,
     ) -> None:
         self._camera = camera
         self._classifier = classifier
@@ -51,6 +54,7 @@ class CameraStream:
         self._semaphore = inference_semaphore
         self._confidence_threshold = confidence_threshold
         self._clip_duration = clip_duration
+        self._clap_verifier = clap_verifier
 
         self._state = StreamState.DISCONNECTED
         self._backoff = camera.reconnect_interval
@@ -75,6 +79,11 @@ class CameraStream:
     @property
     def last_event_time(self) -> float:
         return self._last_event_time
+
+    @property
+    def last_chunk_time(self) -> float:
+        """Monotonic timestamp of last audio chunk received (0.0 if none)."""
+        return self._ambient.last_chunk_time
 
     def start(self) -> asyncio.Task:
         """Start the stream processing task."""
@@ -104,9 +113,10 @@ class CameraStream:
         while True:
             try:
                 self._state = StreamState.CONNECTING
-                logger.info(
-                    "[%s] Connecting to %s", self._camera.name, self._camera.rtsp_url
+                safe_url = re.sub(
+                    r"://([^:]+):([^@]+)@", r"://\1:***@", self._camera.rtsp_url
                 )
+                logger.info("[%s] Connecting to %s", self._camera.name, safe_url)
 
                 self._process = await start_ffmpeg(self._camera.rtsp_url)
                 self._state = StreamState.STREAMING
@@ -125,7 +135,14 @@ class CameraStream:
                 logger.exception("[%s] Stream error", self._camera.name)
             finally:
                 if self._process:
-                    self._process.terminate()
+                    try:
+                        self._process.terminate()
+                        await asyncio.wait_for(self._process.wait(), timeout=5.0)
+                    except (ProcessLookupError, asyncio.TimeoutError):
+                        try:
+                            self._process.kill()
+                        except ProcessLookupError:
+                            pass
                     self._process = None
                 self._publisher.publish_camera_offline(self._camera.name)
 
@@ -166,6 +183,14 @@ class CameraStream:
                     trigger_db,
                     self._confidence_threshold,
                 )
+                # CLAP verification (inside semaphore — sequential with AST)
+                if classifications and self._clap_verifier is not None:
+                    classifications = await asyncio.to_thread(
+                        self._clap_verifier.verify,
+                        audio,
+                        classifications,
+                        self._camera.name,
+                    )
 
             if classifications:
                 self._last_event_time = now
@@ -199,6 +224,7 @@ class StreamManager:
         publisher: MqttPublisher,
         confidence_threshold: float = 0.15,
         clip_duration: int = 3,
+        clap_verifier: CLAPVerifier | None = None,
     ) -> None:
         self._semaphore = asyncio.Semaphore(1)
         self._streams = [
@@ -209,6 +235,7 @@ class StreamManager:
                 inference_semaphore=self._semaphore,
                 confidence_threshold=confidence_threshold,
                 clip_duration=clip_duration,
+                clap_verifier=clap_verifier,
             )
             for cam in cameras
         ]

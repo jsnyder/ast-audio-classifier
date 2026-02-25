@@ -28,15 +28,30 @@ class ClassificationResult:
     confidence: float
     top_5: list[tuple[str, float]]
     db_level: float
+    # CLAP verification fields (None when CLAP is disabled)
+    clap_verified: bool | None = None
+    clap_score: float | None = None
+    clap_label: str | None = None
+    source: str = "ast"
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "label": self.label,
             "group": self.group,
             "confidence": self.confidence,
             "top_5": self.top_5,
             "db_level": self.db_level,
         }
+        # Include CLAP fields only when set (keeps payloads clean when CLAP disabled)
+        if self.clap_verified is not None:
+            d["clap_verified"] = self.clap_verified
+        if self.clap_score is not None:
+            d["clap_score"] = self.clap_score
+        if self.clap_label is not None:
+            d["clap_label"] = self.clap_label
+        if self.source != "ast":
+            d["source"] = self.source
+        return d
 
 
 class ASTClassifier:

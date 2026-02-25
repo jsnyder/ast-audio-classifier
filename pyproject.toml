@@ -47,6 +47,7 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+collect_ignore_glob = ["tests/e2e/*"]
 
 [tool.coverage.run]
 source = ["src"]

@@ -47,6 +47,7 @@ class MqttPublisher:
 
     def connect(self) -> None:
         """Connect to MQTT broker."""
+        self._loop = asyncio.get_running_loop()
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.connect(self._config.mqtt.host, self._config.mqtt.port)
@@ -76,7 +77,7 @@ class MqttPublisher:
                 self._config.mqtt.port,
             )
             self._connected = True
-            self._connected_event.set()
+            self._loop.call_soon_threadsafe(self._connected_event.set)
             self._publish_discovery()
             self._client.publish(f"{TOPIC_PREFIX}/status", "online", qos=1, retain=True)
         else:
@@ -84,7 +85,7 @@ class MqttPublisher:
 
     def _on_disconnect(self, client: mqtt.Client, userdata: object, rc: int) -> None:
         self._connected = False
-        self._connected_event.clear()
+        self._loop.call_soon_threadsafe(self._connected_event.clear)
         if rc != 0:
             logger.warning("Unexpected MQTT disconnect (rc=%s), will reconnect", rc)
 
@@ -213,6 +214,7 @@ class MqttPublisher:
             "music": "mdi:music",
             "vehicle": "mdi:car",
             "car_horn": "mdi:bugle",
+            "aircraft": "mdi:airplane",
             # Household
             "vacuum_cleaner": "mdi:robot-vacuum",
             "water_running": "mdi:water",
@@ -240,16 +242,24 @@ class MqttPublisher:
         )
 
         # Attributes
+        attrs = {
+            "confidence": result.confidence,
+            "raw_label": result.label,
+            "db_level": result.db_level,
+            "timestamp": now,
+        }
+        # Include CLAP attributes when available
+        if result.clap_verified is not None:
+            attrs["clap_verified"] = result.clap_verified
+        if result.clap_score is not None:
+            attrs["clap_score"] = result.clap_score
+        if result.clap_label is not None:
+            attrs["clap_label"] = result.clap_label
+        if result.source != "ast":
+            attrs["source"] = result.source
         self._client.publish(
             f"{TOPIC_PREFIX}/{camera_name}/{group}/attributes",
-            json.dumps(
-                {
-                    "confidence": result.confidence,
-                    "raw_label": result.label,
-                    "db_level": result.db_level,
-                    "timestamp": now,
-                }
-            ),
+            json.dumps(attrs),
             qos=1,
         )
 
@@ -259,17 +269,24 @@ class MqttPublisher:
             result.label,
             qos=1,
         )
+        last_event_attrs = {
+            "group": result.group,
+            "confidence": result.confidence,
+            "db_level": result.db_level,
+            "top_5": result.top_5,
+            "timestamp": now,
+        }
+        if result.clap_verified is not None:
+            last_event_attrs["clap_verified"] = result.clap_verified
+        if result.clap_score is not None:
+            last_event_attrs["clap_score"] = result.clap_score
+        if result.clap_label is not None:
+            last_event_attrs["clap_label"] = result.clap_label
+        if result.source != "ast":
+            last_event_attrs["source"] = result.source
         self._client.publish(
             f"{TOPIC_PREFIX}/{camera_name}/last_event/attributes",
-            json.dumps(
-                {
-                    "group": result.group,
-                    "confidence": result.confidence,
-                    "db_level": result.db_level,
-                    "top_5": result.top_5,
-                    "timestamp": now,
-                }
-            ),
+            json.dumps(last_event_attrs),
             qos=1,
         )
 

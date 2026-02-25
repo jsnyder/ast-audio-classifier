@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
 import numpy as np
@@ -75,7 +76,8 @@ async def start_ffmpeg(rtsp_url: str) -> asyncio.subprocess.Process:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    logger.info("ffmpeg started for %s (pid=%s)", rtsp_url, process.pid)
+    safe_url = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", rtsp_url)
+    logger.info("ffmpeg started for %s (pid=%s)", safe_url, process.pid)
 
     # Drain stderr in a background task to prevent pipe deadlock
     async def _drain_stderr() -> None:
@@ -113,10 +115,12 @@ class AmbientMonitor:
         self.peak_db = DB_FLOOR
         self.chunk_count = 0
         self.last_report = time.monotonic()
+        self.last_chunk_time: float = 0.0  # monotonic timestamp of last received chunk
 
     def update(self, db: float, db_threshold: float) -> None:
         """Update tracking and log if report interval has elapsed."""
         self.chunk_count += 1
+        self.last_chunk_time = time.monotonic()
         if db > self.peak_db:
             self.peak_db = db
         now = time.monotonic()
