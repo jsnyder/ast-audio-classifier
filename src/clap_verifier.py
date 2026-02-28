@@ -17,8 +17,6 @@ import logging
 from dataclasses import dataclass, replace
 
 import numpy as np
-import torch
-import torchaudio
 
 from .classifier import ClassificationResult
 from .labels import LABEL_GROUPS
@@ -129,6 +127,7 @@ class CLAPVerifier:
             model=self._config.model,
             device=-1,  # CPU
         )
+        import torchaudio
         self._resampler = torchaudio.transforms.Resample(AST_SAMPLE_RATE, CLAP_SAMPLE_RATE)
         self._loaded = True
         logger.info("CLAP model loaded successfully")
@@ -200,6 +199,7 @@ class CLAPVerifier:
 
     def _resample(self, audio_16k: np.ndarray) -> np.ndarray:
         """Resample 16kHz audio to 48kHz for CLAP using torchaudio."""
+        import torch
         tensor = torch.from_numpy(audio_16k)
         resampled = self._resampler(tensor)
         return resampled.numpy()
