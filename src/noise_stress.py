@@ -21,7 +21,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ class NoiseStressScorer:
         self._last_score: dict | None = None
 
         # Daily tracking
-        self._today: DailyStats = DailyStats(date=datetime.now(timezone.utc).date())
+        self._today: DailyStats = DailyStats(date=datetime.now(UTC).date())
         self._daily_history: list[DailyStats] = []
 
     @property
@@ -375,10 +375,8 @@ class NoiseStressScorer:
         sensitization — once overloaded, recovery is much slower than
         onset. Repeated bursts accumulate even if individual events decay.
         """
-        if event_component > self._sustained_ema:
-            alpha = 0.08  # moderate attack: ~6 min to saturate
-        else:
-            alpha = 0.005  # very slow release: ~90 min to decay
+        # moderate attack (~6 min to saturate) vs very slow release (~90 min to decay)
+        alpha = 0.08 if event_component > self._sustained_ema else 0.005
 
         self._sustained_ema += alpha * (event_component - self._sustained_ema)
         return self._sustained_ema
@@ -436,7 +434,7 @@ class NoiseStressScorer:
 
     def _update_daily(self, score: float, top_stressor: str | None) -> None:
         """Update daily stats, rolling over at midnight UTC."""
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         if self._today.date != today:
             # Roll over: finalize yesterday and start a new day
             if self._today.count > 0:

@@ -9,6 +9,7 @@ DISCONNECTED -> CONNECTING -> STREAMING -> COOLDOWN -> STREAMING
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import enum
 import logging
 import re
@@ -137,15 +138,13 @@ class CameraStream:
         """Stop the stream and clean up."""
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         if self._process:
             self._process.terminate()
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._process.kill()
         self._publisher.publish_camera_offline(self._camera.name)
 
@@ -182,11 +181,9 @@ class CameraStream:
                     try:
                         self._process.terminate()
                         await asyncio.wait_for(self._process.wait(), timeout=5.0)
-                    except (ProcessLookupError, asyncio.TimeoutError):
-                        try:
+                    except (TimeoutError, ProcessLookupError):
+                        with contextlib.suppress(ProcessLookupError):
                             self._process.kill()
-                        except ProcessLookupError:
-                            pass
                     self._process = None
                 self._publisher.publish_camera_offline(self._camera.name)
 

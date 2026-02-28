@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import paho.mqtt.client as mqtt
 
@@ -233,7 +233,7 @@ class MqttPublisher:
     def publish_detection(self, camera_name: str, result: ClassificationResult) -> None:
         """Publish a detection event for a camera."""
         group = result.group
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Binary sensor ON
         self._client.publish(

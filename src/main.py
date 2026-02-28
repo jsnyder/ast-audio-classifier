@@ -7,10 +7,12 @@ starts per-camera stream tasks, and serves the health API.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import logging
 import os
 import time
+from datetime import UTC
 
 import numpy as np
 from fastapi import FastAPI, Request, UploadFile
@@ -19,8 +21,8 @@ from fastapi.responses import JSONResponse
 from . import __version__
 from .classifier import ASTClassifier
 from .config import load_config
-from .mqtt_publisher import MqttPublisher
 from .labels import LABEL_GROUPS
+from .mqtt_publisher import MqttPublisher
 from .stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
@@ -73,9 +75,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
         app.state.clap_verifier = None
         if config.clap and config.clap.enabled:
             from .clap_verifier import (
-                CLAPConfig as CLAPVerifierConfig,
-                CLAPVerifier,
                 DEFAULT_NEVER_SUPPRESS,
+                CLAPVerifier,
+            )
+            from .clap_verifier import (
+                CLAPConfig as CLAPVerifierConfig,
             )
 
             never_suppress = frozenset(config.clap.never_suppress) if config.clap.never_suppress else DEFAULT_NEVER_SUPPRESS
@@ -114,7 +118,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             await asyncio.wait_for(
                 app.state.publisher.connected_event.wait(), timeout=5.0
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Failed to connect to MQTT broker within 5s")
 
         # Optional: Event consolidator for cross-camera dedup
@@ -123,10 +127,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
             from .event_consolidator import EventConsolidator
 
             def _on_consolidated(group, episode):
-                from datetime import datetime, timedelta, timezone
+                from datetime import datetime, timedelta
 
                 mono_now = time.monotonic()
-                utc_now = datetime.now(timezone.utc)
+                utc_now = datetime.now(UTC)
                 first_detected_iso = (
                     utc_now - timedelta(seconds=(mono_now - episode.first_detected))
                 ).isoformat()
@@ -230,17 +234,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         cleanup_task = getattr(app.state, "cleanup_task", None)
         if cleanup_task and not cleanup_task.done():
             cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await cleanup_task
-            except asyncio.CancelledError:
-                pass
         noise_stress_task = getattr(app.state, "noise_stress_task", None)
         if noise_stress_task and not noise_stress_task.done():
             noise_stress_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await noise_stress_task
-            except asyncio.CancelledError:
-                pass
         sm = getattr(app.state, "stream_manager", None)
         pub = getattr(app.state, "publisher", None)
         oo = getattr(app.state, "oo_handler", None)
@@ -253,9 +253,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         logger.info("Shutdown complete")
 
     # Grace period after startup before requiring active streams
-    STREAM_GRACE_PERIOD = 180  # seconds
+    stream_grace_period = 180  # seconds
     # Max time without any stream producing audio before unhealthy
-    STREAM_STALE_THRESHOLD = 120  # seconds
+    stream_stale_threshold = 120  # seconds
 
     @app.get("/health")
     async def health(request: Request) -> JSONResponse:
@@ -279,11 +279,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
             streams_total = len(sm.streams)
             for stream in sm.streams:
                 last = stream.last_chunk_time
-                if last > 0 and (now - last) < STREAM_STALE_THRESHOLD:
+                if last > 0 and (now - last) < stream_stale_threshold:
                     streams_active += 1
 
         # After grace period, require at least one active stream
-        past_grace = uptime > STREAM_GRACE_PERIOD
+        past_grace = uptime > stream_grace_period
         streams_healthy = streams_active > 0 if past_grace else True
 
         healthy = model_loaded and mqtt_connected and streams_healthy

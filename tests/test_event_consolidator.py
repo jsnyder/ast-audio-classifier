@@ -107,7 +107,7 @@ class TestSafetyBypass:
             published = []
             consolidator = EventConsolidator(
                 window_seconds=5.0,
-                on_consolidated=lambda g, ep: published.append((g, ep)),
+                on_consolidated=lambda g, ep, _p=published: _p.append((g, ep)),
             )
 
             consolidator.report_detection("cam1", group, 0.95, time.monotonic())

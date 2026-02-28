@@ -4,6 +4,7 @@ import time
 from datetime import date, timedelta
 from unittest.mock import patch
 
+from src.labels import LABEL_GROUPS
 from src.noise_stress import (
     CAMERA_FACTOR_BASE,
     CAMERA_FACTOR_PER_EXTRA,
@@ -23,32 +24,31 @@ from src.noise_stress import (
     StressEvent,
     get_tier_weight,
 )
-from src.labels import LABEL_GROUPS
 
 
 class TestStressTierWeights:
     """All 31 label groups map to expected ADHD/autism-calibrated tiers."""
 
     # HIGH STARTLE / SENSITIZATION (3.0)
-    HIGH_GROUPS = {
+    HIGH_GROUPS = frozenset({
         "dog_bark", "screaming", "crying", "siren",
         "alarm_beep", "glass_break", "gunshot_explosion",
-    }
+    })
     # FOCUS DISRUPTION / UNPREDICTABLE (2.5)
-    FOCUS_DISRUPTION_GROUPS = {
+    FOCUS_DISRUPTION_GROUPS = frozenset({
         "speech", "knock", "doorbell",
-    }
+    })
     # LOUD BUT PREDICTABLE (1.2)
-    LOUD_PREDICTABLE_GROUPS = {
+    LOUD_PREDICTABLE_GROUPS = frozenset({
         "vacuum_cleaner", "power_tools", "car_horn", "music",
-    }
+    })
     # BACKGROUND / MILD (0.4)
-    BACKGROUND_GROUPS = {
+    BACKGROUND_GROUPS = frozenset({
         "footsteps", "door", "cabinet", "kitchen_appliance",
         "vehicle", "aircraft",
-    }
+    })
     # STIMMING / MASKING (-0.5)
-    CALMING_GROUPS = {"rain_storm", "hvac_mechanical", "water_running"}
+    CALMING_GROUPS = frozenset({"rain_storm", "hvac_mechanical", "water_running"})
 
     def test_high_tier_weight(self):
         for group in self.HIGH_GROUPS:

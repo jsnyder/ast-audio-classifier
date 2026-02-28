@@ -180,9 +180,8 @@ class CLAPVerifier:
             label: str = item["label"]
             score: float = float(item["score"])
             group = self._prompt_to_group.get(label)
-            if group is not None:
-                if group not in group_scores or score > group_scores[group]:
-                    group_scores[group] = score
+            if group is not None and (group not in group_scores or score > group_scores[group]):
+                group_scores[group] = score
         return group_scores
 
     def _best_clap_label(

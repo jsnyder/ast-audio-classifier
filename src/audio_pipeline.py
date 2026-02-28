@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from collections import deque
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 
@@ -23,6 +23,9 @@ BYTES_PER_SAMPLE = 2  # 16-bit PCM
 CHUNK_BYTES = CHUNK_SAMPLES * BYTES_PER_SAMPLE
 DB_FLOOR = -96.0
 PRE_TRIGGER_CHUNKS = 5  # 500ms at 100ms/chunk
+
+# Strong references to fire-and-forget background tasks to prevent GC
+_background_tasks: set[asyncio.Task[None]] = set()
 
 
 def compute_rms_db(pcm_int16: np.ndarray) -> float:
@@ -117,7 +120,9 @@ async def start_ffmpeg(
         except Exception:
             logger.debug("ffmpeg stderr drain ended for pid=%s", process.pid)
 
-    asyncio.create_task(_drain_stderr(), name=f"ffmpeg-stderr-{process.pid}")
+    task = asyncio.create_task(_drain_stderr(), name=f"ffmpeg-stderr-{process.pid}")
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return process
 
 
@@ -225,7 +230,7 @@ async def read_audio_clip(
             chunk = await asyncio.wait_for(
                 process.stdout.read(CHUNK_BYTES), timeout=30.0
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("ffmpeg stdout read timeout")
             return None
         if not chunk:

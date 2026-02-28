@@ -2,14 +2,14 @@
 
 import numpy as np
 
-from src.classifier import ClassificationResult
 from src.clap_verifier import (
+    DEFAULT_NEVER_SUPPRESS,
     DEFAULT_PROMPTS,
     CLAPConfig,
     CLAPVerifier,
-    DEFAULT_NEVER_SUPPRESS,
     build_default_prompts,
 )
+from src.classifier import ClassificationResult
 from src.labels import LABEL_GROUPS
 
 
@@ -237,7 +237,7 @@ class TestCLAPVerifierDiscovery:
         assert "dog_bark" in groups
         assert "vacuum_cleaner" in groups
 
-        vacuum = [r for r in results if r.group == "vacuum_cleaner"][0]
+        vacuum = next(r for r in results if r.group == "vacuum_cleaner")
         assert vacuum.source == "clap"
         assert vacuum.clap_verified is True
         assert vacuum.clap_score >= 0.50
@@ -404,7 +404,6 @@ class TestCLAPResample:
         resample_calls = []
         verifier = _make_verifier({"a dog barking": 0.72})
 
-        original_resample = verifier._resample
 
         def _tracking_resample(audio):
             resample_calls.append(len(audio))
@@ -435,7 +434,7 @@ class TestCLAPConfirmMargin:
             np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
         )
         assert len(results) >= 1
-        dog = [r for r in results if r.group == "dog_bark"][0]
+        dog = next(r for r in results if r.group == "dog_bark")
         assert dog.clap_verified is True
 
     def test_margin_fails_when_alternative_dominates(self):
@@ -465,7 +464,7 @@ class TestCLAPConfirmMargin:
             np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
         )
         assert len(results) >= 1
-        dog = [r for r in results if r.group == "dog_bark"][0]
+        dog = next(r for r in results if r.group == "dog_bark")
         assert dog.clap_verified is True
 
     def test_margin_does_not_affect_never_suppress(self):
