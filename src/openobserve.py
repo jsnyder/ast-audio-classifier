@@ -201,6 +201,7 @@ def setup_openobserve_logging(
     event_logger = logging.getLogger("ast.events")
     event_logger.addHandler(handler)
     event_logger.setLevel(logging.INFO)
+    event_logger.propagate = False  # Prevent double-shipping via root handler
 
     logger.info(
         "OpenObserve logging enabled → %s:%s%s",

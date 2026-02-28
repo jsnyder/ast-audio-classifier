@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 
+from . import __version__
 from .classifier import ClassificationResult
 from .config import AppConfig, CameraConfig
 from .labels import LABEL_GROUPS
@@ -176,7 +177,7 @@ class MqttPublisher:
             "name": f"AST Audio Classifier - {cam.name.replace('_', ' ').title()}",
             "manufacturer": "MIT",
             "model": "Audio Spectrogram Transformer",
-            "sw_version": "0.1.0",
+            "sw_version": __version__,
         }
 
     @staticmethod
@@ -306,4 +307,118 @@ class MqttPublisher:
             "offline",
             qos=1,
             retain=True,
+        )
+
+    def publish_consolidated_discovery(self, auto_off_seconds: int) -> None:
+        """Publish HA MQTT discovery configs for consolidated binary sensors."""
+        for group in LABEL_GROUPS:
+            object_id = f"ast_consolidated_{group}"
+            discovery_topic = f"{DISCOVERY_PREFIX}/binary_sensor/{object_id}/config"
+
+            payload = {
+                "name": f"AST Consolidated {group.replace('_', ' ').title()}",
+                "unique_id": object_id,
+                "state_topic": f"{TOPIC_PREFIX}/consolidated/{group}/state",
+                "json_attributes_topic": f"{TOPIC_PREFIX}/consolidated/{group}/attributes",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "off_delay": auto_off_seconds,
+                "device_class": self._device_class_for_group(group),
+                "device": {
+                    "identifiers": ["ast_audio_consolidated"],
+                    "name": "AST Audio Classifier - Consolidated",
+                    "manufacturer": "MIT",
+                    "model": "Audio Spectrogram Transformer",
+                    "sw_version": __version__,
+                },
+                "icon": self._icon_for_group(group),
+            }
+            self._client.publish(
+                discovery_topic, json.dumps(payload), qos=1, retain=True
+            )
+        logger.info("Published consolidated MQTT discovery for %d groups", len(LABEL_GROUPS))
+
+    def publish_noise_stress_discovery(self) -> None:
+        """Publish HA MQTT discovery config for the noise stress sensor."""
+        object_id = "ast_noise_stress_score"
+        discovery_topic = f"{DISCOVERY_PREFIX}/sensor/{object_id}/config"
+
+        payload = {
+            "name": "AST Noise Stress Score",
+            "unique_id": object_id,
+            "state_topic": f"{TOPIC_PREFIX}/noise_stress/state",
+            "json_attributes_topic": f"{TOPIC_PREFIX}/noise_stress/attributes",
+            "unit_of_measurement": "",
+            "state_class": "measurement",
+            "availability_topic": f"{TOPIC_PREFIX}/status",
+            "payload_available": "online",
+            "payload_not_available": "offline",
+            "device": {
+                "identifiers": ["ast_audio_noise_stress"],
+                "name": "AST Audio Classifier - Noise Stress",
+                "manufacturer": "MIT",
+                "model": "Audio Spectrogram Transformer",
+                "sw_version": __version__,
+            },
+            "icon": "mdi:head-alert",
+        }
+        self._client.publish(
+            discovery_topic, json.dumps(payload), qos=1, retain=True
+        )
+        logger.info("Published noise stress MQTT discovery")
+
+    def publish_noise_stress_score(self, score_data: dict) -> None:
+        """Publish a noise stress score update."""
+        self._client.publish(
+            f"{TOPIC_PREFIX}/noise_stress/state",
+            str(score_data["score"]),
+            qos=1,
+        )
+        attrs = {
+            "ambient_component": score_data["ambient_component"],
+            "event_component": score_data["event_component"],
+            "sustained_component": score_data["sustained_component"],
+            "recent_event_count": score_data["recent_event_count"],
+            "top_stressor": score_data.get("top_stressor"),
+            "dominant_camera": score_data.get("dominant_camera"),
+            "active_high_stress": score_data.get("active_high_stress", False),
+            "daily_avg": score_data.get("daily_avg", 0.0),
+            "daily_min": score_data.get("daily_min", 0.0),
+            "daily_max": score_data.get("daily_max", 0.0),
+            "daily_samples": score_data.get("daily_samples", 0),
+        }
+        self._client.publish(
+            f"{TOPIC_PREFIX}/noise_stress/attributes",
+            json.dumps(attrs),
+            qos=1,
+        )
+
+    def publish_consolidated_event(
+        self,
+        group: str,
+        cameras: list[str],
+        max_confidence: float,
+        detection_count: int,
+        duration_seconds: float,
+        first_detected: str,
+        last_detected: str,
+    ) -> None:
+        """Publish a consolidated detection event."""
+        self._client.publish(
+            f"{TOPIC_PREFIX}/consolidated/{group}/state",
+            "ON",
+            qos=1,
+        )
+        attrs = {
+            "cameras": cameras,
+            "max_confidence": max_confidence,
+            "detection_count": detection_count,
+            "duration_seconds": round(duration_seconds, 2),
+            "first_detected": first_detected,
+            "last_detected": last_detected,
+        }
+        self._client.publish(
+            f"{TOPIC_PREFIX}/consolidated/{group}/attributes",
+            json.dumps(attrs),
+            qos=1,
         )

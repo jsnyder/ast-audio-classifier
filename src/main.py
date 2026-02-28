@@ -86,11 +86,24 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 suppress_threshold=config.clap.suppress_threshold,
                 override_threshold=config.clap.override_threshold,
                 discovery_threshold=config.clap.discovery_threshold,
+                confirm_margin=config.clap.confirm_margin,
                 never_suppress=never_suppress,
                 custom_prompts=config.clap.custom_prompts,
             )
             app.state.clap_verifier = CLAPVerifier(clap_cfg)
             logger.info("CLAP verifier loaded")
+
+        # Optional: LLM Judge for ground-truth evaluation
+        app.state.llm_judge = None
+        if config.llm_judge and config.llm_judge.enabled:
+            from .llm_judge import LLMJudge
+
+            app.state.llm_judge = LLMJudge(config.llm_judge)
+            logger.info(
+                "LLM Judge enabled (model=%s, sample_rate=%.0f%%)",
+                config.llm_judge.model,
+                config.llm_judge.sample_rate * 100,
+            )
 
         # Connect MQTT and publish discovery
         app.state.publisher = MqttPublisher(config)
@@ -104,6 +117,98 @@ def create_app(config_path: str | None = None) -> FastAPI:
         except asyncio.TimeoutError:
             logger.error("Failed to connect to MQTT broker within 5s")
 
+        # Optional: Event consolidator for cross-camera dedup
+        app.state.consolidator = None
+        if config.consolidated_enabled:
+            from .event_consolidator import EventConsolidator
+
+            def _on_consolidated(group, episode):
+                from datetime import datetime, timedelta, timezone
+
+                mono_now = time.monotonic()
+                utc_now = datetime.now(timezone.utc)
+                first_detected_iso = (
+                    utc_now - timedelta(seconds=(mono_now - episode.first_detected))
+                ).isoformat()
+                last_detected_iso = (
+                    utc_now - timedelta(seconds=(mono_now - episode.last_detected))
+                ).isoformat()
+                duration = episode.last_detected - episode.first_detected
+
+                app.state.publisher.publish_consolidated_event(
+                    group=group,
+                    cameras=list(episode.cameras),
+                    max_confidence=round(episode.max_confidence, 4),
+                    detection_count=episode.detection_count,
+                    duration_seconds=duration,
+                    first_detected=first_detected_iso,
+                    last_detected=last_detected_iso,
+                )
+
+            app.state.consolidator = EventConsolidator(
+                window_seconds=config.consolidated_window_seconds,
+                auto_off_seconds=config.auto_off_seconds,
+                on_consolidated=_on_consolidated,
+            )
+            # Publish consolidated discovery
+            app.state.publisher.publish_consolidated_discovery(
+                app.state.consolidator.auto_off_seconds
+            )
+
+            # Periodic cleanup task
+            async def _cleanup_loop():
+                while True:
+                    await asyncio.sleep(10)
+                    app.state.consolidator.cleanup_stale()
+
+            app.state.cleanup_task = asyncio.create_task(
+                _cleanup_loop(), name="consolidator-cleanup"
+            )
+            logger.info(
+                "Event consolidator enabled (window=%.1fs)",
+                config.consolidated_window_seconds,
+            )
+
+        # Optional: Noise stress scorer
+        app.state.noise_stress = None
+        app.state.noise_stress_task = None
+        if config.noise_stress and config.noise_stress.enabled:
+            from .noise_stress import NoiseStressScorer
+
+            indoor = frozenset(config.noise_stress.indoor_cameras or [])
+            app.state.noise_stress = NoiseStressScorer(
+                half_life=config.noise_stress.decay_half_life_seconds,
+                saturation=config.noise_stress.saturation_constant,
+                indoor_cameras=indoor,
+                update_interval=config.noise_stress.update_interval_seconds,
+            )
+            app.state.publisher.publish_noise_stress_discovery()
+
+            interval = config.noise_stress.update_interval_seconds
+
+            async def _noise_stress_loop():
+                while True:
+                    await asyncio.sleep(interval)
+                    try:
+                        sm = getattr(app.state, "stream_manager", None)
+                        ambient_data = {}
+                        if sm:
+                            for stream in sm.streams:
+                                ambient_data[stream.camera_name] = stream.ambient_info
+                        score_data = app.state.noise_stress.compute(ambient_data)
+                        app.state.publisher.publish_noise_stress_score(score_data)
+                    except Exception:
+                        logger.exception("Error in noise stress update loop")
+
+            app.state.noise_stress_task = asyncio.create_task(
+                _noise_stress_loop(), name="noise-stress-update"
+            )
+            logger.info(
+                "Noise stress scorer enabled (interval=%.0fs, half_life=%.0fs)",
+                interval,
+                config.noise_stress.decay_half_life_seconds,
+            )
+
         # Start camera streams
         app.state.stream_manager = StreamManager(
             cameras=config.cameras,
@@ -112,6 +217,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             confidence_threshold=config.confidence_threshold,
             clip_duration=config.clip_duration_seconds,
             clap_verifier=app.state.clap_verifier,
+            llm_judge=app.state.llm_judge,
+            consolidator=app.state.consolidator,
+            noise_stress=app.state.noise_stress,
         )
         app.state.stream_manager.start_all()
         app.state.start_time = time.monotonic()
@@ -119,6 +227,20 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
+        cleanup_task = getattr(app.state, "cleanup_task", None)
+        if cleanup_task and not cleanup_task.done():
+            cleanup_task.cancel()
+            try:
+                await cleanup_task
+            except asyncio.CancelledError:
+                pass
+        noise_stress_task = getattr(app.state, "noise_stress_task", None)
+        if noise_stress_task and not noise_stress_task.done():
+            noise_stress_task.cancel()
+            try:
+                await noise_stress_task
+            except asyncio.CancelledError:
+                pass
         sm = getattr(app.state, "stream_manager", None)
         pub = getattr(app.state, "publisher", None)
         oo = getattr(app.state, "oo_handler", None)
@@ -141,6 +263,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         pub = getattr(request.app.state, "publisher", None)
         sm = getattr(request.app.state, "stream_manager", None)
         clap = getattr(request.app.state, "clap_verifier", None)
+        llm_judge = getattr(request.app.state, "llm_judge", None)
         start = getattr(request.app.state, "start_time", 0)
 
         model_loaded = clf is not None and clf.loaded
@@ -171,6 +294,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "status": "healthy" if healthy else "unhealthy",
                 "model_loaded": model_loaded,
                 "clap_loaded": clap_loaded,
+                "llm_judge_enabled": llm_judge is not None,
                 "mqtt_connected": mqtt_connected,
                 "streams_active": streams_active,
                 "streams_total": streams_total,
@@ -185,6 +309,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         start = getattr(request.app.state, "start_time", 0)
         clf = getattr(request.app.state, "classifier", None)
         clap = getattr(request.app.state, "clap_verifier", None)
+        llm_judge_status = getattr(request.app.state, "llm_judge", None)
         pub = getattr(request.app.state, "publisher", None)
         sm = getattr(request.app.state, "stream_manager", None)
 
@@ -196,27 +321,28 @@ def create_app(config_path: str | None = None) -> FastAPI:
         ambient_info = {}
         if sm:
             for stream in sm.streams:
-                amb = stream._ambient
-                ambient_info[stream.camera_name] = {
-                    "peak_db": round(amb.peak_db, 1),
-                    "chunk_count": amb.chunk_count,
-                    "threshold": stream._camera.db_threshold,
-                }
+                ambient_info[stream.camera_name] = stream.ambient_info
 
-        return JSONResponse(
-            content={
-                "version": __version__,
-                "uptime_seconds": round(uptime, 1),
-                "model_loaded": clf is not None and clf.loaded,
-                "clap_loaded": clap is not None and clap.loaded,
-                "mqtt_connected": pub is not None and pub.connected,
-                "cameras": cameras,
-                "cameras_online": f"{online}/{len(cameras)}",
-                "total_inferences": sum(c["inference_count"] for c in cameras),
-                "label_groups_count": len(LABEL_GROUPS),
-                "ambient": ambient_info,
-            }
-        )
+        # Noise stress status
+        ns = getattr(request.app.state, "noise_stress", None)
+
+        content = {
+            "version": __version__,
+            "uptime_seconds": round(uptime, 1),
+            "model_loaded": clf is not None and clf.loaded,
+            "clap_loaded": clap is not None and clap.loaded,
+            "llm_judge_enabled": llm_judge_status is not None,
+            "mqtt_connected": pub is not None and pub.connected,
+            "cameras": cameras,
+            "cameras_online": f"{online}/{len(cameras)}",
+            "total_inferences": sum(c["inference_count"] for c in cameras),
+            "label_groups_count": len(LABEL_GROUPS),
+            "ambient": ambient_info,
+        }
+        if ns is not None:
+            content["noise_stress"] = ns.status()
+
+        return JSONResponse(content=content)
 
     @app.get("/status/cameras")
     async def status_cameras(request: Request) -> JSONResponse:
@@ -244,16 +370,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
         if content[:4] == b"RIFF":
             import wave
 
-            wav = wave.open(io.BytesIO(content))
-            frames = wav.readframes(wav.getnframes())
+            with wave.open(io.BytesIO(content)) as wav:
+                frames = wav.readframes(wav.getnframes())
+                framerate = wav.getframerate()
             audio_int16 = np.frombuffer(frames, dtype=np.int16)
             audio = audio_int16.astype(np.float32) / 32768.0
-            if wav.getframerate() != 16000:
+            if framerate != 16000:
                 import librosa
 
                 audio = librosa.resample(
                     y=audio,
-                    orig_sr=wav.getframerate(),
+                    orig_sr=framerate,
                     target_sr=16000,
                 )
         else:

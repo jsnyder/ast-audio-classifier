@@ -19,6 +19,9 @@ WORKDIR /app
 # Install uv for fast package management
 RUN pip install --no-cache-dir uv
 
+# Cache bust: change this value to force a rebuild of source layers
+ARG SOURCE_VERSION=0.2.5
+
 # Copy project files
 COPY pyproject.toml ./
 COPY src ./src

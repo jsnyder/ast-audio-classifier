@@ -1,5 +1,5 @@
 name: AST Audio Classifier
-version: "0.1.0"
+version: "0.4.3"
 slug: ast-audio-classifier
 description: Audio Spectrogram Transformer sidecar for RTSP audio classification with MQTT auto-discovery
 url: https://github.com/jsnyder/home_assistant
@@ -14,6 +14,7 @@ hassio_role: manager
 
 map:
   - config:rw
+  - media:rw
 
 options:
   mqtt_host: "core-mosquitto"
@@ -33,10 +34,24 @@ options:
   openobserve_password: ""
   clap_enabled: false
   clap_model: "laion/clap-htsat-fused"
-  clap_confirm_threshold: 0.25
+  clap_confirm_threshold: 0.30
   clap_suppress_threshold: 0.15
   clap_override_threshold: 0.40
   clap_discovery_threshold: 0.50
+  clap_confirm_margin: 0.20
+  llm_judge_enabled: false
+  llm_judge_api_base: "https://llm-proxy.example.com/v1"
+  llm_judge_api_key: ""
+  llm_judge_model: "gemini-2.5-flash"
+  llm_judge_sample_rate: 0.10
+  llm_judge_max_clips: 5000
+  consolidated_enabled: false
+  consolidated_window_seconds: 5.0
+  noise_stress_enabled: false
+  noise_stress_update_interval: 30
+  noise_stress_decay_half_life: 180.0
+  noise_stress_saturation: 25.0
+  noise_stress_indoor_cameras: []
 
 schema:
   mqtt_host: str
@@ -50,6 +65,9 @@ schema:
       cooldown_seconds: "int?"
       battery: "bool?"
       reconnect_interval: "int?"
+      highpass_freq: "int?"
+      adaptive_threshold: "bool?"
+      adaptive_margin_db: "float?"
   confidence_threshold: "float?"
   auto_off_seconds: "int?"
   clip_duration_seconds: "int?"
@@ -66,3 +84,18 @@ schema:
   clap_suppress_threshold: "float?"
   clap_override_threshold: "float?"
   clap_discovery_threshold: "float?"
+  clap_confirm_margin: "float?"
+  llm_judge_enabled: "bool?"
+  llm_judge_api_base: "str?"
+  llm_judge_api_key: "password?"
+  llm_judge_model: "str?"
+  llm_judge_sample_rate: "float?"
+  llm_judge_max_clips: "int?"
+  consolidated_enabled: "bool?"
+  consolidated_window_seconds: "float?"
+  noise_stress_enabled: "bool?"
+  noise_stress_update_interval: "int?"
+  noise_stress_decay_half_life: "float?"
+  noise_stress_saturation: "float?"
+  noise_stress_indoor_cameras:
+    - "str?"

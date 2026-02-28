@@ -55,10 +55,11 @@ openobserve:
 clap:
   enabled: true
   model: "laion/clap-htsat-fused"   # CLAP model from Hugging Face
-  confirm_threshold: 0.25           # CLAP score to confirm AST detection
+  confirm_threshold: 0.30           # CLAP score to confirm AST detection
   suppress_threshold: 0.15          # Below this + strong alt = suppress
   override_threshold: 0.40          # Alternative must score this high to suppress
   discovery_threshold: 0.50         # CLAP-only detection threshold
+  confirm_margin: 0.20              # Reject confirmation if best alt dominates by this margin
   never_suppress:                   # Safety-critical groups never suppressed
     - smoke_alarm
     - glass_break

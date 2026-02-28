@@ -26,6 +26,17 @@ class CameraConfig:
     cooldown_seconds: int = 10
     battery: bool = False
     reconnect_interval: int = 5
+    highpass_freq: int = 0
+    adaptive_threshold: bool = False
+    adaptive_margin_db: float = 8.0
+
+    def __post_init__(self) -> None:
+        if self.highpass_freq < 0:
+            msg = f"highpass_freq must be >= 0 (0 = disabled), got {self.highpass_freq}"
+            raise ValueError(msg)
+        if self.adaptive_threshold and self.adaptive_margin_db <= 0:
+            msg = f"adaptive_margin_db must be > 0 when adaptive_threshold=true, got {self.adaptive_margin_db}"
+            raise ValueError(msg)
 
 
 @dataclass
@@ -39,15 +50,70 @@ class OpenObserveConfig:
 
 
 @dataclass
-class CLAPConfig:
+class CLAPOptions:
+    """Raw CLAP settings as loaded from YAML / HA addon options."""
+
     enabled: bool = True
     model: str = "laion/clap-htsat-fused"
-    confirm_threshold: float = 0.25
+    confirm_threshold: float = 0.30
     suppress_threshold: float = 0.15
     override_threshold: float = 0.40
     discovery_threshold: float = 0.50
+    confirm_margin: float = 0.20
     never_suppress: list[str] | None = None
     custom_prompts: dict[str, list[str]] | None = None
+
+    def __post_init__(self) -> None:
+        if self.suppress_threshold >= self.confirm_threshold:
+            msg = (
+                f"suppress_threshold must be < confirm_threshold, "
+                f"got suppress={self.suppress_threshold}, confirm={self.confirm_threshold}"
+            )
+            raise ValueError(msg)
+        if self.override_threshold <= self.suppress_threshold:
+            msg = (
+                f"override_threshold must be > suppress_threshold, "
+                f"got override={self.override_threshold}, suppress={self.suppress_threshold}"
+            )
+            raise ValueError(msg)
+        if self.confirm_margin < 0:
+            msg = f"confirm_margin must be >= 0, got {self.confirm_margin}"
+            raise ValueError(msg)
+
+
+@dataclass
+class LLMJudgeConfig:
+    enabled: bool = False
+    api_base: str = ""
+    api_key: str = ""
+    model: str = "gemini-2.5-flash"
+    sample_rate: float = 0.10
+    clip_dir: str = "/media/ast-audio-classifier/clips"
+    max_clips: int = 5000
+    timeout_seconds: int = 30
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.sample_rate <= 1.0):
+            msg = f"sample_rate must be in [0, 1], got {self.sample_rate}"
+            raise ValueError(msg)
+        if self.max_clips < 1:
+            msg = f"max_clips must be >= 1, got {self.max_clips}"
+            raise ValueError(msg)
+        if self.timeout_seconds < 1:
+            msg = f"timeout_seconds must be >= 1, got {self.timeout_seconds}"
+            raise ValueError(msg)
+        if self.enabled and not self.api_base:
+            msg = "llm_judge.api_base must be set when enabled=true"
+            raise ValueError(msg)
+
+
+@dataclass
+class NoiseStressConfig:
+    enabled: bool = False
+    update_interval_seconds: float = 30.0
+    decay_half_life_seconds: float = 180.0
+    saturation_constant: float = 25.0
+    indoor_cameras: list[str] | None = None
 
 
 @dataclass
@@ -55,11 +121,15 @@ class AppConfig:
     mqtt: MqttConfig
     cameras: list[CameraConfig]
     openobserve: OpenObserveConfig | None = None
-    clap: CLAPConfig | None = None
+    clap: CLAPOptions | None = None
+    llm_judge: LLMJudgeConfig | None = None
+    noise_stress: NoiseStressConfig | None = None
     confidence_threshold: float = 0.15
     auto_off_seconds: int = 30
     clip_duration_seconds: int = 3
     health_port: int = 8080
+    consolidated_enabled: bool = False
+    consolidated_window_seconds: float = 5.0
 
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{(\w+)\}")
@@ -128,10 +198,15 @@ def load_config(path: str) -> AppConfig:
     clap = None
     if "clap" in raw:
         clap_raw = dict(raw["clap"])
-        # Convert never_suppress list from YAML to the dataclass field
-        if "never_suppress" in clap_raw and isinstance(clap_raw["never_suppress"], list):
-            clap_raw["never_suppress"] = clap_raw["never_suppress"]
-        clap = CLAPConfig(**clap_raw)
+        clap = CLAPOptions(**clap_raw)
+
+    llm_judge = None
+    if "llm_judge" in raw:
+        llm_judge = LLMJudgeConfig(**raw["llm_judge"])
+
+    noise_stress = None
+    if "noise_stress" in raw:
+        noise_stress = NoiseStressConfig(**raw["noise_stress"])
 
     defaults = raw.get("defaults", {})
     return AppConfig(
@@ -139,8 +214,12 @@ def load_config(path: str) -> AppConfig:
         cameras=cameras,
         openobserve=openobserve,
         clap=clap,
+        llm_judge=llm_judge,
+        noise_stress=noise_stress,
         confidence_threshold=defaults.get("confidence_threshold", 0.15),
         auto_off_seconds=defaults.get("auto_off_seconds", 30),
         clip_duration_seconds=defaults.get("clip_duration_seconds", 3),
         health_port=defaults.get("health_port", 8080),
+        consolidated_enabled=defaults.get("consolidated_enabled", False),
+        consolidated_window_seconds=defaults.get("consolidated_window_seconds", 5.0),
     )

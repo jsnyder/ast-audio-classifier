@@ -9,3 +9,4 @@ venv/
 *.egg
 config.yaml
 .env
+.playwright-cli/

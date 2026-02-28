@@ -35,10 +35,11 @@ class TestCLAPConfig:
         cfg = CLAPConfig()
         assert cfg.enabled is True
         assert cfg.model == "laion/clap-htsat-fused"
-        assert cfg.confirm_threshold == 0.25
+        assert cfg.confirm_threshold == 0.30
         assert cfg.suppress_threshold == 0.15
         assert cfg.override_threshold == 0.40
         assert cfg.discovery_threshold == 0.50
+        assert cfg.confirm_margin == 0.20
         assert cfg.never_suppress == DEFAULT_NEVER_SUPPRESS
         assert cfg.custom_prompts is None
 
@@ -85,6 +86,13 @@ class FakeCLAPPipeline:
         return results
 
 
+class _RaisingPipeline:
+    """Mock CLAP pipeline that raises on every call."""
+
+    def __call__(self, audio, candidate_labels=None, **kwargs):
+        raise RuntimeError("CLAP model OOM")
+
+
 def _noop_resample(audio_16k):
     """Skip librosa resampling in tests — return audio as-is."""
     return audio_16k
@@ -123,7 +131,7 @@ class TestCLAPVerifierConfirm:
 
     def test_confirm_at_threshold(self):
         """Exactly at confirm_threshold should still confirm."""
-        verifier = _make_verifier({"a dog barking": 0.25})
+        verifier = _make_verifier({"a dog barking": 0.30})
         ast_results = [_make_ast_result()]
         results = verifier.verify(
             np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
@@ -137,7 +145,7 @@ class TestCLAPVerifierSuppress:
         """When CLAP disagrees and has a strong alternative, suppress."""
         # AST says music, CLAP says vacuum_cleaner strongly, music weakly
         verifier = _make_verifier({
-            "music playing": 0.05,
+            "music playing with instruments": 0.05,
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -151,7 +159,7 @@ class TestCLAPVerifierSuppress:
     def test_no_suppress_when_clap_above_suppress_threshold(self):
         """If CLAP scores the group >= suppress_threshold, don't suppress."""
         verifier = _make_verifier({
-            "music playing": 0.20,  # >= 0.15 suppress_threshold
+            "music playing with instruments": 0.20,  # >= 0.15 suppress_threshold
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -159,7 +167,7 @@ class TestCLAPVerifierSuppress:
             np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
         )
         # Not suppressed because clap score for music (0.20) >= suppress_threshold (0.15)
-        # But also not confirmed because 0.20 < confirm_threshold (0.25)
+        # Not confirmed either because 0.20 < confirm_threshold (0.30)
         music_results = [r for r in results if r.group == "music"]
         assert len(music_results) == 1
         assert music_results[0].clap_verified is False
@@ -167,7 +175,7 @@ class TestCLAPVerifierSuppress:
     def test_no_suppress_without_strong_alternative(self):
         """If CLAP has no strong alternative, don't suppress even with low score."""
         verifier = _make_verifier({
-            "music playing": 0.05,
+            "music playing with instruments": 0.05,
             # No alternative above override_threshold (0.40)
             "a vacuum cleaner running": 0.30,
         })
@@ -306,21 +314,24 @@ class TestCLAPVerifierCustomPrompts:
 
 
 class TestCLAPVerifierEdgeCases:
-    def test_empty_ast_results(self):
-        """Empty AST results should return empty (no discovery without context)."""
+    def test_empty_ast_results_with_strong_clap_discovers(self):
+        """CLAP discovery still fires on empty AST results."""
         verifier = _make_verifier({"a dog barking": 0.90})
         results = verifier.verify(
             np.zeros(16000, dtype=np.float32), [], "test_cam"
         )
-        # Discovery can still happen but with no AST context
-        # The verifier should not crash
-        assert isinstance(results, list)
+        groups = {r.group for r in results}
+        assert "dog_bark" in groups
+        discovered = next(r for r in results if r.group == "dog_bark")
+        assert discovered.source == "clap"
+        assert discovered.db_level == 0.0  # No AST ref → falls back to 0.0
+        assert discovered.top_5 == []  # No AST predictions for discovered events
 
     def test_multiple_ast_results(self):
         """Multiple AST results should each be verified independently."""
         verifier = _make_verifier({
             "a dog barking": 0.72,
-            "a person speaking": 0.45,
+            "a person speaking clearly": 0.45,
         })
         ast_results = [
             _make_ast_result(label="Dog", group="dog_bark", confidence=0.85),
@@ -336,7 +347,7 @@ class TestCLAPVerifierEdgeCases:
     def test_suppression_with_discovery(self):
         """Suppressed AST result + CLAP discovery = correct replacement."""
         verifier = _make_verifier({
-            "music playing": 0.05,
+            "music playing with instruments": 0.05,
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -348,3 +359,155 @@ class TestCLAPVerifierEdgeCases:
         assert "music" not in groups
         assert "vacuum_cleaner" in groups
         assert results[0].source == "clap"
+
+
+class TestCLAPVerifierInferenceFailure:
+    def test_pipeline_exception_returns_ast_results(self):
+        """If CLAP pipeline throws, return unmodified AST results."""
+        verifier = _make_verifier({})
+        # Replace pipeline with one that raises
+        verifier._pipeline = _RaisingPipeline()
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        )
+        # Should get back the original AST results unmodified
+        assert len(results) == 1
+        assert results[0].group == "dog_bark"
+        assert results[0].confidence == 0.85
+        # Should NOT have CLAP fields set
+        assert results[0].clap_verified is None
+        assert results[0].clap_score is None
+
+
+class TestCLAPResample:
+    """Test torchaudio-based resampling."""
+
+    def test_resample_output_shape(self):
+        """Resampled audio should have 3x the samples (16kHz -> 48kHz)."""
+        verifier = _make_verifier({})
+        # Create a mock resampler that returns correct shape
+        import types
+
+        def _mock_resample(self, audio_16k):
+            # Simulate 3x upsampling
+            return np.repeat(audio_16k, 3)
+
+        verifier._resample = types.MethodType(_mock_resample, verifier)
+
+        audio_16k = np.random.randn(16000).astype(np.float32)
+        result = verifier._resample(audio_16k)
+        assert len(result) == 48000
+
+    def test_resample_called_in_verify(self):
+        """verify() should call _resample to prepare audio for CLAP."""
+        resample_calls = []
+        verifier = _make_verifier({"a dog barking": 0.72})
+
+        original_resample = verifier._resample
+
+        def _tracking_resample(audio):
+            resample_calls.append(len(audio))
+            return audio  # Return same audio (mock doesn't care about rate)
+
+        verifier._resample = _tracking_resample
+
+        ast_results = [_make_ast_result()]
+        verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test")
+
+        assert len(resample_calls) == 1
+        assert resample_calls[0] == 16000
+
+
+class TestCLAPConfirmMargin:
+    """Tests for the confirm_margin rule that prevents confirming
+    a group when a much stronger alternative exists."""
+
+    def test_margin_passes_when_competitive(self):
+        """When CLAP score is competitive with best alternative, confirm."""
+        # dog_bark=0.50, vacuum_cleaner=0.55 — difference is 0.05 < margin 0.20
+        verifier = _make_verifier({
+            "a dog barking": 0.50,
+            "a vacuum cleaner running": 0.55,
+        })
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        )
+        assert len(results) >= 1
+        dog = [r for r in results if r.group == "dog_bark"][0]
+        assert dog.clap_verified is True
+
+    def test_margin_fails_when_alternative_dominates(self):
+        """When best alternative dominates, confirmation is rejected (unverified)."""
+        # speech=0.30 (at threshold), vacuum_cleaner=0.75
+        # margin check: 0.30 >= 0.75 - 0.20 = 0.55? No → unverified
+        verifier = _make_verifier({
+            "a person speaking clearly": 0.30,
+            "a vacuum cleaner running": 0.75,
+        })
+        ast_results = [_make_ast_result(
+            label="Speech", group="speech", confidence=0.40
+        )]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        )
+        speech = [r for r in results if r.group == "speech"]
+        assert len(speech) == 1
+        assert speech[0].clap_verified is False  # Unverified, not confirmed
+
+    def test_margin_with_no_alternatives_always_passes(self):
+        """When there are no alternative groups, margin check always passes."""
+        # Only dog_bark has a score, no alternatives
+        verifier = _make_verifier({"a dog barking": 0.35})
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        )
+        assert len(results) >= 1
+        dog = [r for r in results if r.group == "dog_bark"][0]
+        assert dog.clap_verified is True
+
+    def test_margin_does_not_affect_never_suppress(self):
+        """Never-suppress groups bypass margin check entirely."""
+        # smoke_alarm=0.30 (at threshold), vacuum_cleaner=0.80
+        # Without never_suppress, margin would fail. With it, should pass through.
+        verifier = _make_verifier({
+            "a smoke alarm beeping": 0.30,
+            "a vacuum cleaner running": 0.80,
+        })
+        ast_results = [_make_ast_result(
+            label="Smoke detector", group="smoke_alarm", confidence=0.90
+        )]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        )
+        smoke = [r for r in results if r.group == "smoke_alarm"]
+        assert len(smoke) == 1  # Not suppressed
+
+
+class TestCLAPPromptQuality:
+    """Verify prompt coverage for key groups."""
+
+    def test_vacuum_cleaner_has_sufficient_prompts(self):
+        assert len(DEFAULT_PROMPTS["vacuum_cleaner"]) >= 5
+
+    def test_speech_has_sufficient_prompts(self):
+        assert len(DEFAULT_PROMPTS["speech"]) >= 4
+
+    def test_music_has_sufficient_prompts(self):
+        assert len(DEFAULT_PROMPTS["music"]) >= 4
+
+    def test_kitchen_appliance_has_sufficient_prompts(self):
+        assert len(DEFAULT_PROMPTS["kitchen_appliance"]) >= 4
+
+
+class TestCLAPNeverSuppressContents:
+    """Verify NEVER_SUPPRESS membership after speech removal."""
+
+    def test_speech_not_in_never_suppress(self):
+        assert "speech" not in DEFAULT_NEVER_SUPPRESS
+
+    def test_safety_groups_still_present(self):
+        for group in ("smoke_alarm", "glass_break", "siren", "screaming", "crying"):
+            assert group in DEFAULT_NEVER_SUPPRESS

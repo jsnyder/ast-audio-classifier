@@ -17,6 +17,8 @@ import logging
 from dataclasses import dataclass, replace
 
 import numpy as np
+import torch
+import torchaudio
 
 from .classifier import ClassificationResult
 from .labels import LABEL_GROUPS
@@ -32,10 +34,8 @@ DEFAULT_NEVER_SUPPRESS = frozenset({
     "smoke_alarm",
     "glass_break",
     "siren",
-    "gunshot_explosion",
     "screaming",
     "crying",
-    "speech",
 })
 
 
@@ -54,7 +54,7 @@ def _group_to_prompts(group: str) -> list[str]:
         "dog_bark": ["a dog barking"],
         "cat_meow": ["a cat meowing"],
         "crying": ["a baby crying", "someone crying"],
-        "speech": ["a person speaking", "human speech"],
+        "speech": ["a person speaking clearly", "people talking in a conversation", "a human voice speaking words", "someone talking in a room"],
         "cough_sneeze": ["a person coughing", "someone sneezing"],
         "footsteps": ["footsteps walking"],
         "doorbell": ["a doorbell ringing"],
@@ -62,16 +62,16 @@ def _group_to_prompts(group: str) -> list[str]:
         "door": ["a door opening or closing", "a door slamming"],
         "cabinet": ["a cupboard or drawer opening"],
         "rain_storm": ["rain falling", "a thunderstorm"],
-        "music": ["music playing"],
+        "music": ["music playing with instruments", "a song with singing and melody", "rhythmic music with drums and bass", "background music from a speaker"],
         "vehicle": ["a vehicle driving", "a car passing by"],
         "car_horn": ["a car horn honking"],
         "aircraft": ["an airplane flying overhead", "a jet engine"],
-        "vacuum_cleaner": ["a vacuum cleaner running"],
+        "vacuum_cleaner": ["a vacuum cleaner running", "an autonomous vacuum cleaner operating", "a robot vacuum motor whine", "a constant mechanical humming from a vacuum", "a robotic vacuum rolling on the floor", "a continuous droning motor hum", "a roborock robot vacuum cleaning"],
         "water_running": ["water running from a faucet", "water splashing"],
-        "kitchen_appliance": ["a kitchen appliance running", "dishes clanking"],
+        "kitchen_appliance": ["dishes clanking in a kitchen", "plates and silverware clattering", "a blender running in a kitchen", "a microwave beeping", "cooking sounds with pots and pans"],
         "power_tools": ["a power tool running", "a drill or saw"],
         "alarm_beep": ["an alarm beeping", "a buzzer sounding"],
-        "hvac_mechanical": ["an air conditioning unit", "a mechanical fan running"],
+        "hvac_mechanical": ["an air conditioning unit", "a mechanical fan running", "a furnace blower running", "a heating system running", "white noise from a fan"],
         "mechanical_anomaly": ["a mechanical rattling noise", "equipment vibrating"],
         "water_leak": ["water dripping", "water trickling"],
         "electrical_anomaly": ["an electrical buzzing noise", "a humming sound"],
@@ -98,10 +98,11 @@ class CLAPConfig:
 
     enabled: bool = True
     model: str = "laion/clap-htsat-fused"
-    confirm_threshold: float = 0.25
+    confirm_threshold: float = 0.30
     suppress_threshold: float = 0.15
     override_threshold: float = 0.40
     discovery_threshold: float = 0.50
+    confirm_margin: float = 0.20
     never_suppress: frozenset[str] = DEFAULT_NEVER_SUPPRESS
     custom_prompts: dict[str, list[str]] | None = None
 
@@ -114,6 +115,7 @@ class CLAPVerifier:
     """
 
     def __init__(self, config: CLAPConfig | None = None) -> None:
+        self._loaded = False
         self._config = config or CLAPConfig()
         self._prompts = self._build_prompts()
         self._all_prompt_texts = self._flatten_prompts()
@@ -127,6 +129,7 @@ class CLAPVerifier:
             model=self._config.model,
             device=-1,  # CPU
         )
+        self._resampler = torchaudio.transforms.Resample(AST_SAMPLE_RATE, CLAP_SAMPLE_RATE)
         self._loaded = True
         logger.info("CLAP model loaded successfully")
 
@@ -196,14 +199,11 @@ class CLAPVerifier:
                 best_score = score
         return best_label, best_score
 
-    @staticmethod
-    def _resample(audio_16k: np.ndarray) -> np.ndarray:
-        """Resample 16kHz audio to 48kHz for CLAP."""
-        import librosa
-
-        return librosa.resample(
-            y=audio_16k, orig_sr=AST_SAMPLE_RATE, target_sr=CLAP_SAMPLE_RATE
-        )
+    def _resample(self, audio_16k: np.ndarray) -> np.ndarray:
+        """Resample 16kHz audio to 48kHz for CLAP using torchaudio."""
+        tensor = torch.from_numpy(audio_16k)
+        resampled = self._resampler(tensor)
+        return resampled.numpy()
 
     def verify(
         self,
@@ -225,10 +225,17 @@ class CLAPVerifier:
         audio_48k = self._resample(audio_16k)
 
         # Run CLAP zero-shot against all prompts
-        clap_results = self._pipeline(
-            audio_48k,
-            candidate_labels=self._all_prompt_texts,
-        )
+        try:
+            clap_results = self._pipeline(
+                audio_48k,
+                candidate_labels=self._all_prompt_texts,
+            )
+        except Exception:
+            logger.exception(
+                "[%s] CLAP inference failed, returning unmodified AST results",
+                camera_name,
+            )
+            return ast_results
 
         group_scores = self._score_by_group(clap_results)
 
@@ -252,29 +259,38 @@ class CLAPVerifier:
                 )
                 continue
 
-            # Check for confirmation
-            if clap_score >= self._config.confirm_threshold:
-                logger.info(
-                    "[%s] CLAP confirmed %s (clap=%.3f, ast=%.3f)",
-                    camera_name, group, clap_score, result.confidence,
-                )
-                verified_results.append(
-                    replace(
-                        result,
-                        clap_verified=True,
-                        clap_score=round(clap_score, 4),
-                        clap_label=clap_label,
-                    )
-                )
-                continue
-
-            # Check for suppression: CLAP disagrees AND has a strong alternative
+            # Find best alternative score (used by both margin check and suppression)
             best_alt_group = None
             best_alt_score = 0.0
             for alt_group, alt_score in group_scores.items():
                 if alt_group != group and alt_score > best_alt_score:
                     best_alt_group = alt_group
                     best_alt_score = alt_score
+
+            # Check for confirmation (with margin gate)
+            if clap_score >= self._config.confirm_threshold:
+                # Margin check: CLAP score must be competitive with best alternative
+                if clap_score >= best_alt_score - self._config.confirm_margin:
+                    logger.info(
+                        "[%s] CLAP confirmed %s (clap=%.3f, ast=%.3f)",
+                        camera_name, group, clap_score, result.confidence,
+                    )
+                    verified_results.append(
+                        replace(
+                            result,
+                            clap_verified=True,
+                            clap_score=round(clap_score, 4),
+                            clap_label=clap_label,
+                        )
+                    )
+                    continue
+                else:
+                    logger.info(
+                        "[%s] CLAP margin rejected %s (clap=%.3f, alt=%s=%.3f, margin=%.2f)",
+                        camera_name, group, clap_score,
+                        best_alt_group, best_alt_score, self._config.confirm_margin,
+                    )
+                    # Fall through to unverified path
 
             if (
                 clap_score < self._config.suppress_threshold
@@ -305,10 +321,9 @@ class CLAPVerifier:
         for group, score in group_scores.items():
             if group not in ast_groups and score >= self._config.discovery_threshold:
                 clap_label, _ = self._best_clap_label(group, clap_results)
-                # Use the first AST result's db_level and top_5 for context
+                # db_level comes from the audio frame, not the classifier
                 ref = ast_results[0] if ast_results else None
                 db_level = ref.db_level if ref else 0.0
-                top_5 = ref.top_5 if ref else []
 
                 logger.info(
                     "[%s] CLAP discovered %s (clap=%.3f, label=%s)",
@@ -319,7 +334,7 @@ class CLAPVerifier:
                         label=clap_label,
                         group=group,
                         confidence=round(score, 4),
-                        top_5=top_5,
+                        top_5=[],
                         db_level=db_level,
                         clap_verified=True,
                         clap_score=round(score, 4),
