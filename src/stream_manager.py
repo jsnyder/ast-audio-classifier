@@ -253,14 +253,21 @@ class CameraStream:
                         cls_result.db_level,
                     )
                     self._publisher.publish_detection(self._camera.name, cls_result)
-                    log_event(
-                        "detection",
-                        camera=self._camera.name,
-                        group=cls_result.group,
-                        confidence=cls_result.confidence,
-                        db_level=cls_result.db_level,
-                        raw_label=cls_result.label,
-                    )
+                    oo_fields: dict = {
+                        "group": cls_result.group,
+                        "confidence": cls_result.confidence,
+                        "db_level": cls_result.db_level,
+                        "raw_label": cls_result.label,
+                    }
+                    if cls_result.clap_verified is not None:
+                        oo_fields["clap_verified"] = cls_result.clap_verified
+                    if cls_result.clap_score is not None:
+                        oo_fields["clap_score"] = cls_result.clap_score
+                    if cls_result.clap_label is not None:
+                        oo_fields["clap_label"] = cls_result.clap_label
+                    if cls_result.source != "ast":
+                        oo_fields["source"] = cls_result.source
+                    log_event("detection", camera=self._camera.name, **oo_fields)
                     # Report to consolidator for cross-camera dedup
                     if self._consolidator is not None:
                         self._consolidator.report_detection(

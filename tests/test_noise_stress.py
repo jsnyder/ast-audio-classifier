@@ -1,7 +1,7 @@
 """Tests for noise stress scoring module."""
 
 import time
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
 from src.labels import LABEL_GROUPS
@@ -763,7 +763,7 @@ class TestDailyTracking:
         scorer.compute()
 
         # Simulate midnight rollover by patching datetime
-        tomorrow = date.today() + timedelta(days=1)
+        tomorrow = datetime.now(UTC).date() + timedelta(days=1)
         with patch("src.noise_stress.datetime") as mock_dt:
             mock_dt.now.return_value.date.return_value = tomorrow
             scorer.compute()
@@ -794,7 +794,7 @@ class TestDailyTracking:
 
         history = scorer.daily_history
         assert len(history) == 1
-        assert history[0]["date"] == date.today().isoformat()
+        assert history[0]["date"] == datetime.now(UTC).date().isoformat()
 
     def test_status_includes_daily_history(self):
         scorer = NoiseStressScorer()
