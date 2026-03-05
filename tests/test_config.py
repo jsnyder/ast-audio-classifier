@@ -484,6 +484,29 @@ class TestLLMJudgeConfig:
         assert cfg.max_clips == 1000
 
 
+class TestLLMJudgeConfigValidation:
+    def test_enabled_without_api_base_raises(self):
+        """Enabling LLM judge without api_base must raise immediately."""
+        with pytest.raises(ValueError, match="llm_judge.api_base must be set"):
+            LLMJudgeConfig(enabled=True, api_base="")
+
+    def test_enabled_with_api_base_passes(self):
+        cfg = LLMJudgeConfig(enabled=True, api_base="https://example.com/v1")
+        assert cfg.enabled is True
+
+    def test_sample_rate_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="sample_rate"):
+            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", sample_rate=1.5)
+
+    def test_max_clips_zero_raises(self):
+        with pytest.raises(ValueError, match="max_clips"):
+            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", max_clips=0)
+
+    def test_timeout_zero_raises(self):
+        with pytest.raises(ValueError, match="timeout_seconds"):
+            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", timeout_seconds=0)
+
+
 class TestLoadConfigLLMJudge:
     def test_llm_judge_none_when_absent(self, tmp_path):
         """Config without llm_judge section → config.llm_judge is None."""

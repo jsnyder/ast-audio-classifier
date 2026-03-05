@@ -32,6 +32,7 @@ options:
   openobserve_stream: "ast_audio"
   openobserve_username: ""
   openobserve_password: ""
+  openobserve_use_ssl: false
   clap_enabled: false
   clap_model: "laion/clap-htsat-fused"
   clap_confirm_threshold: 0.30
@@ -40,13 +41,14 @@ options:
   clap_discovery_threshold: 0.50
   clap_confirm_margin: 0.20
   llm_judge_enabled: false
-  llm_judge_api_base: "https://llm-proxy.example.com/v1"
+  llm_judge_api_base: ""
   llm_judge_api_key: ""
   llm_judge_model: "gemini-2.5-flash"
   llm_judge_sample_rate: 0.10
   llm_judge_max_clips: 5000
   consolidated_enabled: false
   consolidated_window_seconds: 5.0
+  auto_discovery: true
   noise_stress_enabled: false
   noise_stress_update_interval: 30
   noise_stress_decay_half_life: 180.0
@@ -68,6 +70,8 @@ schema:
       highpass_freq: "int?"
       adaptive_threshold: "bool?"
       adaptive_margin_db: "float?"
+      go2rtc_stream: "str?"
+  auto_discovery: "bool?"
   confidence_threshold: "float?"
   auto_off_seconds: "int?"
   clip_duration_seconds: "int?"
@@ -78,6 +82,7 @@ schema:
   openobserve_stream: "str?"
   openobserve_username: "str?"
   openobserve_password: "password?"
+  openobserve_use_ssl: "bool?"
   clap_enabled: "bool?"
   clap_model: "str?"
   clap_confirm_threshold: "float?"

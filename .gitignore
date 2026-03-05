@@ -10,3 +10,9 @@ venv/
 config.yaml
 .env
 .playwright-cli/
+
+# E2E test audio samples (large binary files)
+tests/e2e/samples/
+
+# Notion sync state
+.notion-sync.*
