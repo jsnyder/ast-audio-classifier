@@ -1,6 +1,6 @@
 [project]
 name = "ast-audio-classifier"
-version = "0.5.4"
+version = "0.5.5"
 description = "AST Audio Classifier - Docker sidecar for Home Assistant audio event detection"
 authors = [
     {name = "James Snyder"}
