@@ -1,9 +1,17 @@
-"""Per-camera stream management with reconnect and backoff.
+"""Per-camera stream management with reconnect, backoff, and URL discovery.
 
 Each camera runs as an independent asyncio task with states:
 DISCONNECTED -> CONNECTING -> STREAMING -> COOLDOWN -> STREAMING
                     |                        |
                  ERROR -> BACKOFF -> CONNECTING
+                    |
+              DISCOVERING -> CONNECTING  (when stream repeatedly dies quickly)
+
+When a camera has go2rtc_stream configured, the stream manager connects
+exclusively through the go2rtc proxy and never falls back to direct RTSP
+URLs.  This prevents opening competing connections to cameras that only
+support a single RTSP consumer (e.g. battery-powered Arlo cameras managed
+by Scrypted).
 """
 
 from __future__ import annotations
@@ -27,10 +35,13 @@ if TYPE_CHECKING:
     from .event_consolidator import EventConsolidator
     from .llm_judge import LLMJudge
     from .noise_stress import NoiseStressScorer
+    from .url_resolver import ScryptedUrlResolver
 
 logger = logging.getLogger(__name__)
 
 MAX_BACKOFF = 60  # seconds
+DISCOVERY_THRESHOLD = 3  # consecutive short-lived failures before URL discovery
+STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
 
 
 class StreamState(enum.Enum):
@@ -40,6 +51,7 @@ class StreamState(enum.Enum):
     COOLDOWN = "cooldown"
     ERROR = "error"
     BACKOFF = "backoff"
+    DISCOVERING = "discovering"
 
 
 class CameraStream:
@@ -57,6 +69,8 @@ class CameraStream:
         llm_judge: LLMJudge | None = None,
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
+        resolver: ScryptedUrlResolver | None = None,
+        auto_discovery: bool = False,
     ) -> None:
         self._camera = camera
         self._classifier = classifier
@@ -68,16 +82,21 @@ class CameraStream:
         self._llm_judge = llm_judge
         self._consolidator = consolidator
         self._noise_stress = noise_stress
+        self._resolver = resolver
+        self._auto_discovery = auto_discovery
 
         self._state = StreamState.DISCONNECTED
         self._backoff = camera.reconnect_interval
         self._last_event_time: float = 0
         self._inference_count = 0
+        self._consecutive_failures = 0
         self._process: asyncio.subprocess.Process | None = None
         self._task: asyncio.Task | None = None
         self._ambient = AmbientMonitor(camera_name=camera.name)
         # Limit concurrent LLM judge tasks to prevent unbounded accumulation
         self._judge_semaphore = asyncio.Semaphore(2)
+        # Current effective URL (may be updated by discovery)
+        self._effective_url: str = camera.rtsp_url
 
         # Build adaptive threshold closure if enabled
         self._threshold_fn = None
@@ -127,6 +146,17 @@ class CameraStream:
             )
         return info
 
+    def _get_connect_url(self) -> str:
+        """Return the URL to connect to.
+
+        For cameras with go2rtc_stream configured, always use the go2rtc
+        proxy URL.  This ensures we never open a direct connection to the
+        camera, which would compete with Scrypted's single-stream slot.
+        """
+        if self._camera.go2rtc_stream:
+            return self._effective_url
+        return self._effective_url
+
     def start(self) -> asyncio.Task:
         """Start the stream processing task."""
         self._task = asyncio.create_task(
@@ -148,18 +178,67 @@ class CameraStream:
                 self._process.kill()
         self._publisher.publish_camera_offline(self._camera.name)
 
+    async def _attempt_discovery(self) -> None:
+        """Try to discover a fresh RTSP URL via the resolver.
+
+        For cameras with go2rtc_stream, discovery only updates the go2rtc
+        proxy URL (never reverts to a direct camera URL).
+        """
+        if not self._auto_discovery or self._resolver is None:
+            return
+
+        self._state = StreamState.DISCOVERING
+        logger.info(
+            "[%s] Attempting URL discovery (current: %s)",
+            self._camera.name,
+            re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self._effective_url),
+        )
+
+        try:
+            resolved = await self._resolver.resolve(
+                self._camera.rtsp_url,
+                go2rtc_stream=self._camera.go2rtc_stream,
+            )
+        except Exception:
+            logger.debug("[%s] URL discovery failed", self._camera.name, exc_info=True)
+            resolved = None
+
+        if resolved is not None:
+            safe = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", resolved)
+            logger.info("[%s] Discovered URL: %s", self._camera.name, safe)
+            self._effective_url = resolved
+        elif self._camera.go2rtc_stream:
+            # For go2rtc-only cameras, stay on go2rtc proxy — do NOT revert
+            # to the original direct URL which would open a competing connection.
+            logger.info(
+                "[%s] Discovery returned no result; staying on go2rtc proxy "
+                "(go2rtc_stream=%s)",
+                self._camera.name,
+                self._camera.go2rtc_stream,
+            )
+        else:
+            safe = re.sub(
+                r"://([^:]+):([^@]+)@", r"://\1:***@", self._camera.rtsp_url
+            )
+            logger.info(
+                "[%s] Reverting to original URL: %s", self._camera.name, safe
+            )
+            self._effective_url = self._camera.rtsp_url
+
     async def _run(self) -> None:
         """Main loop: connect, stream, classify, reconnect on failure."""
         while True:
+            stream_start = time.monotonic()
             try:
                 self._state = StreamState.CONNECTING
+                url = self._get_connect_url()
                 safe_url = re.sub(
-                    r"://([^:]+):([^@]+)@", r"://\1:***@", self._camera.rtsp_url
+                    r"://([^:]+):([^@]+)@", r"://\1:***@", url
                 )
                 logger.info("[%s] Connecting to %s", self._camera.name, safe_url)
 
                 self._process = await start_ffmpeg(
-                    self._camera.rtsp_url,
+                    url,
                     highpass_freq=self._camera.highpass_freq,
                 )
                 self._state = StreamState.STREAMING
@@ -187,9 +266,32 @@ class CameraStream:
                     self._process = None
                 self._publisher.publish_camera_offline(self._camera.name)
 
+            # Track stream stability for discovery decisions
+            stream_duration = time.monotonic() - stream_start
+            if stream_duration >= STABLE_STREAM_SECONDS:
+                # Stream was stable — reset failure counter
+                self._consecutive_failures = 0
+            else:
+                self._consecutive_failures += 1
+                logger.warning(
+                    "[%s] Stream died after %.1fs (< %ds), failure %d/%d",
+                    self._camera.name,
+                    stream_duration,
+                    STABLE_STREAM_SECONDS,
+                    self._consecutive_failures,
+                    DISCOVERY_THRESHOLD,
+                )
+
+            # Trigger URL discovery after repeated short-lived streams
+            if self._consecutive_failures >= DISCOVERY_THRESHOLD:
+                await self._attempt_discovery()
+                self._consecutive_failures = 0
+
             # Backoff before reconnect
             self._state = StreamState.BACKOFF
-            logger.info("[%s] Reconnecting in %ds", self._camera.name, self._backoff)
+            logger.info(
+                "[%s] Reconnecting in %ds", self._camera.name, self._backoff
+            )
             await asyncio.sleep(self._backoff)
             self._backoff = min(self._backoff * 2, MAX_BACKOFF)
 
@@ -313,6 +415,8 @@ class StreamManager:
         llm_judge: LLMJudge | None = None,
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
+        resolver: ScryptedUrlResolver | None = None,
+        auto_discovery: bool = False,
     ) -> None:
         self._semaphore = asyncio.Semaphore(1)
         self._streams = [
@@ -327,6 +431,8 @@ class StreamManager:
                 llm_judge=llm_judge,
                 consolidator=consolidator,
                 noise_stress=noise_stress,
+                resolver=resolver,
+                auto_discovery=auto_discovery,
             )
             for cam in cameras
         ]
