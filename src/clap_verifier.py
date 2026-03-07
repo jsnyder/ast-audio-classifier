@@ -101,6 +101,7 @@ class CLAPConfig:
     override_threshold: float = 0.40
     discovery_threshold: float = 0.50
     confirm_margin: float = 0.20
+    ast_bypass_threshold: float = 0.80  # Skip CLAP suppression when AST confidence exceeds this
     never_suppress: frozenset[str] = DEFAULT_NEVER_SUPPRESS
     custom_prompts: dict[str, list[str]] | None = None
 
@@ -290,6 +291,29 @@ class CLAPVerifier:
                         best_alt_group, best_alt_score, self._config.confirm_margin,
                     )
                     # Fall through to unverified path
+
+            # AST confidence bypass: trust high-confidence AST over CLAP suppression
+            if (
+                result.confidence >= self._config.ast_bypass_threshold
+                and clap_score < self._config.suppress_threshold
+                and best_alt_score >= self._config.override_threshold
+            ):
+                logger.info(
+                    "[%s] AST bypass: %s kept despite CLAP suppression "
+                    "(ast=%.3f >= %.2f, clap=%.3f, alt=%s=%.3f)",
+                    camera_name, group, result.confidence,
+                    self._config.ast_bypass_threshold,
+                    clap_score, best_alt_group, best_alt_score,
+                )
+                verified_results.append(
+                    replace(
+                        result,
+                        clap_verified=False,
+                        clap_score=round(clap_score, 4) if clap_score > 0 else None,
+                        clap_label=clap_label or None,
+                    )
+                )
+                continue
 
             if (
                 clap_score < self._config.suppress_threshold

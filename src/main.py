@@ -91,6 +91,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 override_threshold=config.clap.override_threshold,
                 discovery_threshold=config.clap.discovery_threshold,
                 confirm_margin=config.clap.confirm_margin,
+                ast_bypass_threshold=config.clap.ast_bypass_threshold,
                 never_suppress=never_suppress,
                 custom_prompts=config.clap.custom_prompts,
             )

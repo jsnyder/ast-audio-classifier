@@ -61,6 +61,7 @@ class CLAPOptions:
     override_threshold: float = 0.40
     discovery_threshold: float = 0.50
     confirm_margin: float = 0.20
+    ast_bypass_threshold: float = 0.80
     never_suppress: list[str] | None = None
     custom_prompts: dict[str, list[str]] | None = None
 
