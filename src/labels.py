@@ -827,6 +827,11 @@ LABEL_GROUPS: dict[str, list[str]] = {
         "Mains hum",
         "Distortion",
     ],
+    # --- Media (TV/movie audio — used as confuser alternative) ---
+    "media": [
+        "Television",
+        "Radio",
+    ],
 }
 
 # Reverse lookup: label -> group name

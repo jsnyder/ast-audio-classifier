@@ -235,7 +235,7 @@ class TestCLAPVerifierSuppressedTracking:
     def test_non_suppressed_not_in_last_suppressed(self):
         """Confirmed and unverified results are not in last_suppressed."""
         verifier = _make_verifier({
-            "a dog barking loudly": 0.80,
+            "a dog barking": 0.80,
             "music playing with instruments": 0.05,
             "a vacuum cleaner running": 0.65,
         })
@@ -576,3 +576,124 @@ class TestCLAPNeverSuppressContents:
     def test_safety_groups_still_present(self):
         for group in ("smoke_alarm", "glass_break", "siren", "screaming", "crying"):
             assert group in DEFAULT_NEVER_SUPPRESS
+
+
+# ---------------------------------------------------------------------------
+# RED tests: media prompts and AST bypass restriction
+# ---------------------------------------------------------------------------
+
+
+class TestMediaGroupPrompts:
+    """build_default_prompts() should include a 'media' group with TV-related prompts."""
+
+    def test_media_group_exists_in_default_prompts(self):
+        prompts = build_default_prompts()
+        assert "media" in prompts, (
+            "Expected 'media' group in default CLAP prompts — "
+            "needed to detect TV audio as alternative for car_horn/siren/doorbell"
+        )
+
+    def test_media_prompts_mention_television(self):
+        prompts = build_default_prompts()
+        media_prompts = prompts.get("media", [])
+        tv_related = [p for p in media_prompts if "television" in p.lower() or "tv" in p.lower()]
+        assert len(tv_related) >= 1, (
+            f"Media prompts should mention television/TV, got: {media_prompts}"
+        )
+
+    def test_media_group_in_label_groups(self):
+        """Media must be in LABEL_GROUPS for build_default_prompts() to include it."""
+        assert "media" in LABEL_GROUPS, (
+            "Expected 'media' key in LABEL_GROUPS — "
+            "this is required for build_default_prompts() to generate media prompts"
+        )
+
+
+class TestNonSafetyBypassBlocked:
+    """Non-safety groups should NOT get the AST bypass at >=0.80 confidence.
+
+    Scenario: AST says speech at 0.85, CLAP scores speech=0.05,
+    vacuum_cleaner=0.60. The suppression conditions are met
+    (clap < 0.15, alt >= 0.40), AND the bypass conditions are met
+    (AST >= 0.80). But speech is not safety-critical, so CLAP's
+    suppression should win.
+    """
+
+    def test_speech_suppressed_despite_high_ast_confidence(self):
+        verifier = _make_verifier({
+            "a person speaking clearly": 0.05,
+            "a vacuum cleaner running": 0.60,
+        })
+        ast_results = [_make_ast_result(
+            label="Speech", group="speech", confidence=0.85,
+        )]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        )
+        suppressed = verifier.last_suppressed
+
+        verified_groups = [r.group for r in results if r.source == "ast"]
+        suppressed_groups = [r.group for r in suppressed]
+
+        assert "speech" not in verified_groups, (
+            "Speech at AST=0.85 should be suppressed when CLAP scores "
+            "speech=0.05 and alt=0.60 — bypass must not apply to non-safety groups"
+        )
+        assert "speech" in suppressed_groups
+
+    def test_car_horn_suppressed_despite_high_ast_confidence(self):
+        """Same scenario for car_horn — also not safety-critical."""
+        verifier = _make_verifier({
+            "a car horn honking": 0.05,
+            "a vacuum cleaner running": 0.60,
+        })
+        ast_results = [_make_ast_result(
+            label="Car horn", group="car_horn", confidence=0.82,
+        )]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        )
+        verified_groups = [r.group for r in results if r.source == "ast"]
+        assert "car_horn" not in verified_groups, (
+            "car_horn should not get AST bypass — it's not a safety group"
+        )
+
+
+class TestSafetyBypassPreserved:
+    """Safety-critical groups (never_suppress) should always survive.
+
+    Siren at AST=0.85 with CLAP siren=0.05, alt=0.60 — siren is in
+    never_suppress so it goes through the safety override path and
+    is never suppressed regardless.
+    """
+
+    def test_siren_kept_regardless_of_clap(self):
+        verifier = _make_verifier({
+            "a siren wailing": 0.05,
+            "a vacuum cleaner running": 0.60,
+        })
+        ast_results = [_make_ast_result(
+            label="Siren", group="siren", confidence=0.85,
+        )]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        )
+        verified_groups = [r.group for r in results]
+        assert "siren" in verified_groups, (
+            "Siren (never_suppress) must always survive — "
+            "safety-critical groups cannot be dropped"
+        )
+
+    def test_smoke_alarm_kept_regardless_of_clap(self):
+        verifier = _make_verifier({
+            "a smoke alarm beeping": 0.05,
+            "a vacuum cleaner running": 0.60,
+        })
+        ast_results = [_make_ast_result(
+            label="Smoke alarm", group="smoke_alarm", confidence=0.82,
+        )]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        )
+        verified_groups = [r.group for r in results]
+        assert "smoke_alarm" in verified_groups

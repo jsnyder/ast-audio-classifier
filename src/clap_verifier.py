@@ -73,6 +73,11 @@ def _group_to_prompts(group: str) -> list[str]:
         "mechanical_anomaly": ["a mechanical rattling noise", "equipment vibrating"],
         "water_leak": ["water dripping", "water trickling"],
         "electrical_anomaly": ["an electrical buzzing noise", "a humming sound"],
+        "media": [
+            "television audio playing",
+            "a TV show or movie soundtrack",
+            "audio from a television speaker",
+        ],
     }
     if group in prompt_templates:
         return prompt_templates[group]
@@ -300,10 +305,13 @@ class CLAPVerifier:
                     # Fall through to unverified path
 
             # AST confidence bypass: trust high-confidence AST over CLAP suppression
+            # Only applies to safety-critical groups (never_suppress) — for non-safety
+            # groups like speech/car_horn, trust CLAP's suppression even at high AST.
             if (
                 result.confidence >= self._config.ast_bypass_threshold
                 and clap_score < self._config.suppress_threshold
                 and best_alt_score >= self._config.override_threshold
+                and group in self._config.never_suppress
             ):
                 logger.info(
                     "[%s] AST bypass: %s kept despite CLAP suppression "

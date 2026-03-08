@@ -80,6 +80,8 @@ class TestLabelGroups:
             "mechanical_anomaly",
             "water_leak",
             "electrical_anomaly",
+            # Media (TV/movie audio confuser)
+            "media",
         }
         assert set(LABEL_GROUPS.keys()) == expected
 
