@@ -304,31 +304,10 @@ class CLAPVerifier:
                     )
                     # Fall through to unverified path
 
-            # AST confidence bypass: trust high-confidence AST over CLAP suppression
-            # Only applies to safety-critical groups (never_suppress) — for non-safety
-            # groups like speech/car_horn, trust CLAP's suppression even at high AST.
-            if (
-                result.confidence >= self._config.ast_bypass_threshold
-                and clap_score < self._config.suppress_threshold
-                and best_alt_score >= self._config.override_threshold
-                and group in self._config.never_suppress
-            ):
-                logger.info(
-                    "[%s] AST bypass: %s kept despite CLAP suppression "
-                    "(ast=%.3f >= %.2f, clap=%.3f, alt=%s=%.3f)",
-                    camera_name, group, result.confidence,
-                    self._config.ast_bypass_threshold,
-                    clap_score, best_alt_group, best_alt_score,
-                )
-                verified_results.append(
-                    replace(
-                        result,
-                        clap_verified=False,
-                        clap_score=round(clap_score, 4) if clap_score > 0 else None,
-                        clap_label=clap_label or None,
-                    )
-                )
-                continue
+            # Note: The AST confidence bypass was removed here — safety groups
+            # already exit via the never_suppress early return above, so a bypass
+            # conditioned on never_suppress would be dead code. Non-safety groups
+            # now always trust CLAP's suppression regardless of AST confidence.
 
             if (
                 clap_score < self._config.suppress_threshold
