@@ -353,9 +353,12 @@ class TestEvaluate:
         ):
             await judge.evaluate(sample_audio, sample_results, "test_cam")
 
-        clips = os.listdir(judge_config.clip_dir)
-        assert len(clips) == 1
-        assert clips[0].endswith(".wav")
+        all_files = os.listdir(judge_config.clip_dir)
+        wav_files = [f for f in all_files if f.endswith(".wav")]
+        json_files = [f for f in all_files if f.endswith(".json")]
+        assert len(wav_files) == 1
+        assert len(json_files) == 1
+        assert wav_files[0].rsplit(".", 1)[0] == json_files[0].rsplit(".", 1)[0]
 
 
 class TestLLMJudgeConfigValidation:

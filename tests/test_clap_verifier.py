@@ -188,6 +188,72 @@ class TestCLAPVerifierSuppress:
         assert music_results[0].clap_verified is False
 
 
+class TestCLAPVerifierSuppressedTracking:
+    def test_suppressed_results_tracked(self):
+        """Suppressed results are captured in last_suppressed."""
+        verifier = _make_verifier({
+            "music playing with instruments": 0.05,
+            "a vacuum cleaner running": 0.65,
+        })
+        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        )
+        # Music suppressed; vacuum_cleaner may be discovered via CLAP
+        assert not any(r.group == "music" for r in results)
+        assert len(verifier.last_suppressed) == 1
+        assert verifier.last_suppressed[0].group == "music"
+        assert verifier.last_suppressed[0].clap_verified is False
+
+    def test_last_suppressed_resets_between_calls(self):
+        """Each verify() call resets last_suppressed."""
+        verifier = _make_verifier({
+            "music playing with instruments": 0.05,
+            "a vacuum cleaner running": 0.65,
+        })
+        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
+        verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
+        assert len(verifier.last_suppressed) == 1
+        # Second call with no suppression
+        verifier2 = _make_verifier({
+            "music playing with instruments": 0.35,
+        })
+        # Reuse same verifier but with different CLAP scores — use the original
+        # since _make_verifier creates a new one. Just verify reset behavior.
+        verifier.verify(
+            np.zeros(16000, dtype=np.float32),
+            [_make_ast_result(label="Dog", group="dog_bark", confidence=0.90)],
+            "test_cam",
+        )
+        # dog_bark won't be suppressed (CLAP scores vacuum high but dog passes through)
+        # The key point: last_suppressed should be empty or different from the first call
+        # Since dog_bark has no matching CLAP prompt, it goes to unverified path
+        assert verifier.last_suppressed == [] or all(
+            r.group != "music" for r in verifier.last_suppressed
+        )
+
+    def test_non_suppressed_not_in_last_suppressed(self):
+        """Confirmed and unverified results are not in last_suppressed."""
+        verifier = _make_verifier({
+            "a dog barking loudly": 0.80,
+            "music playing with instruments": 0.05,
+            "a vacuum cleaner running": 0.65,
+        })
+        ast_results = [
+            _make_ast_result(label="Dog", group="dog_bark", confidence=0.85),
+            _make_ast_result(label="Music", group="music", confidence=0.60),
+        ]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        )
+        # dog_bark confirmed, music suppressed
+        assert any(r.group == "dog_bark" for r in results)
+        assert not any(r.group == "music" for r in results)
+        # Only music in suppressed
+        assert len(verifier.last_suppressed) == 1
+        assert verifier.last_suppressed[0].group == "music"
+
+
 class TestCLAPVerifierNeverSuppress:
     def test_safety_groups_never_suppressed(self):
         """Safety-critical groups pass through regardless of CLAP scores."""

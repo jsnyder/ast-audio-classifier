@@ -20,7 +20,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Cache bust: change this value to force a rebuild of source layers
-ARG SOURCE_VERSION=0.2.5
+ARG SOURCE_VERSION=0.5.6
 
 # Copy project files
 COPY pyproject.toml ./

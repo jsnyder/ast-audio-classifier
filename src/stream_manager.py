@@ -335,6 +335,7 @@ class CameraStream:
                     self._confidence_threshold,
                 )
                 # CLAP verification (inside semaphore — sequential with AST)
+                suppressed: list = []
                 if classifications and self._clap_verifier is not None:
                     classifications = await asyncio.to_thread(
                         self._clap_verifier.verify,
@@ -342,10 +343,12 @@ class CameraStream:
                         classifications,
                         self._camera.name,
                     )
+                    suppressed = list(self._clap_verifier.last_suppressed)
 
-            if classifications:
-                self._last_event_time = now
-                self._inference_count += 1
+            if classifications or suppressed:
+                if classifications:
+                    self._last_event_time = now
+                    self._inference_count += 1
                 for cls_result in classifications:
                     logger.info(
                         "[%s] Detected %s (%.2f, %.1f dB)",
@@ -387,11 +390,25 @@ class CameraStream:
                             confidence=cls_result.confidence,
                         )
 
-                # LLM judge: fire-and-forget (outside semaphore — I/O-bound)
+                # Log suppressed events to OpenObserve for analysis
+                for sup_result in suppressed:
+                    log_event(
+                        "suppressed",
+                        camera=self._camera.name,
+                        group=sup_result.group,
+                        confidence=sup_result.confidence,
+                        db_level=sup_result.db_level,
+                        raw_label=sup_result.label,
+                        clap_score=sup_result.clap_score,
+                        clap_label=sup_result.clap_label,
+                    )
+
+                # LLM judge: evaluate both verified and suppressed events
                 if self._llm_judge is not None and self._llm_judge.should_sample():
+                    all_for_judge = classifications + suppressed
                     if not self._judge_semaphore.locked():
                         asyncio.create_task(  # noqa: RUF006
-                            self._run_judge(audio, classifications),
+                            self._run_judge(audio, all_for_judge),
                             name=f"llm-judge-{self._camera.name}",
                         )
                     else:

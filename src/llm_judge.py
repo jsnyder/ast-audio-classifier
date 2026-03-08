@@ -98,6 +98,44 @@ class LLMJudge:
 
         return path, wav_bytes
 
+    @staticmethod
+    def _save_sidecar(
+        clip_path: str,
+        camera_name: str,
+        results: list[ClassificationResult],
+        verdicts: list[dict],
+        model: str,
+    ) -> None:
+        """Write a JSON sidecar file alongside the WAV clip.
+
+        Contains all classifications and judge verdicts for training data.
+        """
+        sidecar_path = clip_path.rsplit(".", 1)[0] + ".json"
+        sidecar = {
+            "camera": camera_name,
+            "timestamp": datetime.now(tz=UTC).isoformat(),
+            "classifications": [
+                {
+                    "group": r.group,
+                    "label": r.label,
+                    "confidence": r.confidence,
+                    "db_level": r.db_level,
+                    "clap_verified": r.clap_verified,
+                    "clap_score": r.clap_score,
+                    "clap_label": r.clap_label,
+                    "source": r.source,
+                }
+                for r in results
+            ],
+            "verdicts": verdicts,
+            "judge_model": model,
+        }
+        try:
+            with open(sidecar_path, "w") as f:
+                json.dump(sidecar, f, indent=2)
+        except OSError:
+            logger.debug("Failed to write sidecar: %s", sidecar_path)
+
     def _build_prompt(
         self, results: list[ClassificationResult], camera_name: str
     ) -> str:
@@ -205,6 +243,10 @@ Respond ONLY with valid JSON, no markdown formatting."""
         for entry in entries[:to_delete]:
             try:
                 os.remove(entry.path)
+                # Also remove JSON sidecar if it exists
+                sidecar = entry.path.rsplit(".", 1)[0] + ".json"
+                if os.path.exists(sidecar):
+                    os.remove(sidecar)
             except OSError:
                 logger.debug("Failed to prune clip: %s", entry.path)
 
@@ -283,6 +325,9 @@ Respond ONLY with valid JSON, no markdown formatting."""
                     llm_model=self._config.model,
                     clip_path=clip_path,
                 )
+
+            # Write JSON sidecar with all classifications and verdicts
+            self._save_sidecar(clip_path, camera_name, results, verdicts, self._config.model)
 
             # Prune old clips periodically (not every call)
             if self._should_prune():

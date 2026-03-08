@@ -119,6 +119,7 @@ class CLAPVerifier:
         self._prompts = self._build_prompts()
         self._all_prompt_texts = self._flatten_prompts()
         self._prompt_to_group = self._build_reverse_map()
+        self._last_suppressed: list[ClassificationResult] = []
 
         from transformers import pipeline as hf_pipeline
 
@@ -136,6 +137,11 @@ class CLAPVerifier:
     @property
     def loaded(self) -> bool:
         return self._loaded
+
+    @property
+    def last_suppressed(self) -> list[ClassificationResult]:
+        """Results suppressed by the most recent verify() call."""
+        return self._last_suppressed
 
     def _build_prompts(self) -> dict[str, list[str]]:
         """Merge default prompts with custom prompts from config."""
@@ -222,6 +228,7 @@ class CLAPVerifier:
             List of verified/enriched ClassificationResult objects.
             Suppressed results are excluded from the list.
         """
+        self._last_suppressed = []
         audio_48k = self._resample(audio_16k)
 
         # Run CLAP zero-shot against all prompts
@@ -324,7 +331,15 @@ class CLAPVerifier:
                     camera_name, group, clap_score,
                     best_alt_group, best_alt_score, result.confidence,
                 )
-                continue  # Drop this result
+                self._last_suppressed.append(
+                    replace(
+                        result,
+                        clap_verified=False,
+                        clap_score=round(clap_score, 4) if clap_score > 0 else None,
+                        clap_label=clap_label or None,
+                    )
+                )
+                continue  # Drop from verified results
 
             # Unverified: passes through with flag
             logger.debug(
