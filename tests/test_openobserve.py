@@ -297,7 +297,7 @@ class TestStreamManagerCLAPFields:
             db_level=-35.0,
             clap_verified=False,
             clap_score=0.08,
-            clap_label="a person speaking clearly",
+            clap_label="a voice speaking nearby",
         )
         fields = self._simulate_log_event_from_result(result)
         assert fields["clap_verified"] is False

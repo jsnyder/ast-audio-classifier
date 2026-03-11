@@ -145,7 +145,7 @@ class TestCLAPVerifierSuppress:
         """When CLAP disagrees and has a strong alternative, suppress."""
         # AST says music, CLAP says vacuum_cleaner strongly, music weakly
         verifier = _make_verifier({
-            "music playing with instruments": 0.05,
+            "a song playing in the background": 0.05,
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -159,7 +159,7 @@ class TestCLAPVerifierSuppress:
     def test_no_suppress_when_clap_above_suppress_threshold(self):
         """If CLAP scores the group >= suppress_threshold, don't suppress."""
         verifier = _make_verifier({
-            "music playing with instruments": 0.20,  # >= 0.15 suppress_threshold
+            "a song playing in the background": 0.20,  # >= 0.15 suppress_threshold
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -175,7 +175,7 @@ class TestCLAPVerifierSuppress:
     def test_no_suppress_without_strong_alternative(self):
         """If CLAP has no strong alternative, don't suppress even with low score."""
         verifier = _make_verifier({
-            "music playing with instruments": 0.05,
+            "a song playing in the background": 0.05,
             # No alternative above override_threshold (0.40)
             "a vacuum cleaner running": 0.30,
         })
@@ -192,7 +192,7 @@ class TestCLAPVerifierSuppressedTracking:
     def test_suppressed_results_tracked(self):
         """Suppressed results are captured in last_suppressed."""
         verifier = _make_verifier({
-            "music playing with instruments": 0.05,
+            "a song playing in the background": 0.05,
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -208,7 +208,7 @@ class TestCLAPVerifierSuppressedTracking:
     def test_last_suppressed_resets_between_calls(self):
         """Each verify() call resets last_suppressed."""
         verifier = _make_verifier({
-            "music playing with instruments": 0.05,
+            "a song playing in the background": 0.05,
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -216,7 +216,7 @@ class TestCLAPVerifierSuppressedTracking:
         assert len(verifier.last_suppressed) == 1
         # Second call with no suppression
         verifier2 = _make_verifier({
-            "music playing with instruments": 0.35,
+            "a song playing in the background": 0.35,
         })
         # Reuse same verifier but with different CLAP scores — use the original
         # since _make_verifier creates a new one. Just verify reset behavior.
@@ -236,7 +236,7 @@ class TestCLAPVerifierSuppressedTracking:
         """Confirmed and unverified results are not in last_suppressed."""
         verifier = _make_verifier({
             "a dog barking": 0.80,
-            "music playing with instruments": 0.05,
+            "a song playing in the background": 0.05,
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [
@@ -397,7 +397,7 @@ class TestCLAPVerifierEdgeCases:
         """Multiple AST results should each be verified independently."""
         verifier = _make_verifier({
             "a dog barking": 0.72,
-            "a person speaking clearly": 0.45,
+            "a voice speaking nearby": 0.45,
         })
         ast_results = [
             _make_ast_result(label="Dog", group="dog_bark", confidence=0.85),
@@ -413,7 +413,7 @@ class TestCLAPVerifierEdgeCases:
     def test_suppression_with_discovery(self):
         """Suppressed AST result + CLAP discovery = correct replacement."""
         verifier = _make_verifier({
-            "music playing with instruments": 0.05,
+            "a song playing in the background": 0.05,
             "a vacuum cleaner running": 0.65,
         })
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
@@ -508,7 +508,7 @@ class TestCLAPConfirmMargin:
         # speech=0.30 (at threshold), vacuum_cleaner=0.75
         # margin check: 0.30 >= 0.75 - 0.20 = 0.55? No → unverified
         verifier = _make_verifier({
-            "a person speaking clearly": 0.30,
+            "a voice speaking nearby": 0.30,
             "a vacuum cleaner running": 0.75,
         })
         ast_results = [_make_ast_result(
@@ -621,7 +621,7 @@ class TestNonSafetyBypassBlocked:
 
     def test_speech_suppressed_despite_high_ast_confidence(self):
         verifier = _make_verifier({
-            "a person speaking clearly": 0.05,
+            "a voice speaking nearby": 0.05,
             "a vacuum cleaner running": 0.60,
         })
         ast_results = [_make_ast_result(
