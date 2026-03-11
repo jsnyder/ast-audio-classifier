@@ -24,6 +24,8 @@ import re
 import time
 from typing import TYPE_CHECKING
 
+from dataclasses import replace
+
 from .audio_pipeline import AmbientMonitor, read_audio_clip, start_ffmpeg
 from .clap_verifier import CLAPVerifier
 from .classifier import ASTClassifier
@@ -32,6 +34,7 @@ from .mqtt_publisher import MqttPublisher
 from .openobserve import log_event
 
 if TYPE_CHECKING:
+    from .confounder_monitor import ConfounderMonitor
     from .event_consolidator import EventConsolidator
     from .llm_judge import LLMJudge
     from .noise_stress import NoiseStressScorer
@@ -71,6 +74,7 @@ class CameraStream:
         noise_stress: NoiseStressScorer | None = None,
         resolver: ScryptedUrlResolver | None = None,
         auto_discovery: bool = False,
+        confounder_monitor: ConfounderMonitor | None = None,
     ) -> None:
         self._camera = camera
         self._classifier = classifier
@@ -84,6 +88,7 @@ class CameraStream:
         self._noise_stress = noise_stress
         self._resolver = resolver
         self._auto_discovery = auto_discovery
+        self._confounder_monitor = confounder_monitor
 
         self._state = StreamState.DISCONNECTED
         self._backoff = camera.reconnect_interval
@@ -345,6 +350,26 @@ class CameraStream:
                     )
                     suppressed = list(self._clap_verifier.last_suppressed)
 
+            # Tag classifications with confounder context
+            if classifications and self._confounder_monitor:
+                confused = self._confounder_monitor.get_confused_groups(
+                    self._camera.name
+                )
+                if confused:
+                    tagged = []
+                    for cls_result in classifications:
+                        if cls_result.group in confused:
+                            ctx = self._confounder_monitor.get_confounder_context(
+                                self._camera.name, cls_result.group
+                            )
+                            cls_result = replace(
+                                cls_result,
+                                confounded=True,
+                                confounder_entity=ctx["entity_id"] if ctx else None,
+                            )
+                        tagged.append(cls_result)
+                    classifications = tagged
+
             if classifications or suppressed:
                 if classifications:
                     self._last_event_time = now
@@ -372,6 +397,10 @@ class CameraStream:
                         oo_fields["clap_label"] = cls_result.clap_label
                     if cls_result.source != "ast":
                         oo_fields["source"] = cls_result.source
+                    if cls_result.confounded:
+                        oo_fields["confounded"] = True
+                        if cls_result.confounder_entity:
+                            oo_fields["confounder"] = cls_result.confounder_entity
                     log_event("detection", camera=self._camera.name, **oo_fields)
                     # Report to consolidator for cross-camera dedup
                     if self._consolidator is not None:
@@ -434,6 +463,7 @@ class StreamManager:
         noise_stress: NoiseStressScorer | None = None,
         resolver: ScryptedUrlResolver | None = None,
         auto_discovery: bool = False,
+        confounder_monitor: ConfounderMonitor | None = None,
     ) -> None:
         self._semaphore = asyncio.Semaphore(1)
         self._streams = [
@@ -450,6 +480,7 @@ class StreamManager:
                 noise_stress=noise_stress,
                 resolver=resolver,
                 auto_discovery=auto_discovery,
+                confounder_monitor=confounder_monitor,
             )
             for cam in cameras
         ]

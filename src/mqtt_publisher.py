@@ -258,6 +258,10 @@ class MqttPublisher:
             attrs["clap_label"] = result.clap_label
         if result.source != "ast":
             attrs["source"] = result.source
+        if result.confounded:
+            attrs["confounded"] = True
+            if result.confounder_entity:
+                attrs["confounder"] = result.confounder_entity
         self._client.publish(
             f"{TOPIC_PREFIX}/{camera_name}/{group}/attributes",
             json.dumps(attrs),
@@ -285,6 +289,10 @@ class MqttPublisher:
             last_event_attrs["clap_label"] = result.clap_label
         if result.source != "ast":
             last_event_attrs["source"] = result.source
+        if result.confounded:
+            last_event_attrs["confounded"] = True
+            if result.confounder_entity:
+                last_event_attrs["confounder"] = result.confounder_entity
         self._client.publish(
             f"{TOPIC_PREFIX}/{camera_name}/last_event/attributes",
             json.dumps(last_event_attrs),

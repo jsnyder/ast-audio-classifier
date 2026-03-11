@@ -92,6 +92,30 @@ YAML
     adaptive_threshold: ${CAM_ADAPT}
     adaptive_margin_db: ${CAM_MARGIN}
 YAML
+
+        # Confounders (optional per-camera)
+        CONF_COUNT=$(jq ".cameras[$i].confounders | length" "$OPTIONS_FILE" 2>/dev/null || echo 0)
+        if [ "$CONF_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "    confounders:" >> "$CONFIG_PATH"
+            for j in $(seq 0 $(( CONF_COUNT - 1 ))); do
+                CONF_ENTITY=$(jq -r ".cameras[$i].confounders[$j].entity_id" "$OPTIONS_FILE")
+                CONF_WHEN=$(jq -r ".cameras[$i].confounders[$j].active_when" "$OPTIONS_FILE")
+                CG_COUNT=$(jq ".cameras[$i].confounders[$j].confused_groups | length" "$OPTIONS_FILE" 2>/dev/null || echo 0)
+                if [ "$CG_COUNT" -eq 0 ] 2>/dev/null; then
+                    echo "WARNING: confounder $j on camera $CAM_NAME has no confused_groups, skipping" >&2
+                    continue
+                fi
+                cat >> "$CONFIG_PATH" <<YAML
+      - entity_id: "${CONF_ENTITY}"
+        active_when: "${CONF_WHEN}"
+        confused_groups:
+YAML
+                for k in $(seq 0 $(( CG_COUNT - 1 ))); do
+                    CG=$(jq -r ".cameras[$i].confounders[$j].confused_groups[$k]" "$OPTIONS_FILE")
+                    echo "          - \"${CG}\"" >> "$CONFIG_PATH"
+                done
+            done
+        fi
     done
 
     # OpenObserve (optional)
@@ -149,7 +173,7 @@ YAML
         # Export API key as env var — config.py substitutes ${LLM_JUDGE_API_KEY}
         export LLM_JUDGE_API_KEY
         LLM_JUDGE_API_KEY=$(jq -r '.llm_judge_api_key // ""' "$OPTIONS_FILE")
-        LLM_JUDGE_MODEL=$(jq -r '.llm_judge_model // "gemini-2.5-flash"' "$OPTIONS_FILE")
+        LLM_JUDGE_MODEL=$(jq -r '.llm_judge_model // "gemini-3.1-pro-preview"' "$OPTIONS_FILE")
         LLM_JUDGE_SAMPLE_RATE=$(jq -r '.llm_judge_sample_rate // 0.10' "$OPTIONS_FILE")
         LLM_JUDGE_MAX_CLIPS=$(jq -r '.llm_judge_max_clips // 5000' "$OPTIONS_FILE")
 

@@ -33,6 +33,9 @@ class ClassificationResult:
     clap_score: float | None = None
     clap_label: str | None = None
     source: str = "ast"
+    # Confounder fields (set when a camera confounder is active for this group)
+    confounded: bool = False
+    confounder_entity: str | None = None
 
     def to_dict(self) -> dict:
         d = {
@@ -51,6 +54,10 @@ class ClassificationResult:
             d["clap_label"] = self.clap_label
         if self.source != "ast":
             d["source"] = self.source
+        if self.confounded:
+            d["confounded"] = True
+            if self.confounder_entity:
+                d["confounder"] = self.confounder_entity
         return d
 
 

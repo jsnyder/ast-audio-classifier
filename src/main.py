@@ -214,6 +214,19 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 config.noise_stress.decay_half_life_seconds,
             )
 
+        # Optional: Confounder monitor for per-camera context-aware tagging
+        app.state.confounder_monitor = None
+        cameras_with_confounders = [c for c in config.cameras if c.confounders]
+        if cameras_with_confounders:
+            from .confounder_monitor import ConfounderMonitor
+
+            app.state.confounder_monitor = ConfounderMonitor(config.cameras)
+            await app.state.confounder_monitor.start()
+            logger.info(
+                "Confounder monitor enabled for %d cameras",
+                len(cameras_with_confounders),
+            )
+
         # Start camera streams
         app.state.stream_manager = StreamManager(
             cameras=config.cameras,
@@ -225,6 +238,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             llm_judge=app.state.llm_judge,
             consolidator=app.state.consolidator,
             noise_stress=app.state.noise_stress,
+            confounder_monitor=app.state.confounder_monitor,
         )
         app.state.stream_manager.start_all()
         app.state.start_time = time.monotonic()
@@ -242,9 +256,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
             noise_stress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await noise_stress_task
+        cm = getattr(app.state, "confounder_monitor", None)
         sm = getattr(app.state, "stream_manager", None)
         pub = getattr(app.state, "publisher", None)
         oo = getattr(app.state, "oo_handler", None)
+        if cm:
+            await cm.stop()
         if sm:
             await sm.stop_all()
         if pub:

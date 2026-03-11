@@ -19,6 +19,15 @@ class MqttConfig:
 
 
 @dataclass
+class ConfounderConfig:
+    """A confounder is an HA entity whose state affects which sound groups are trustworthy."""
+
+    entity_id: str
+    active_when: str  # "!off", ">200", "playing", "on", etc.
+    confused_groups: list[str]
+
+
+@dataclass
 class CameraConfig:
     name: str
     rtsp_url: str
@@ -30,6 +39,7 @@ class CameraConfig:
     adaptive_threshold: bool = False
     adaptive_margin_db: float = 8.0
     go2rtc_stream: str | None = None
+    confounders: list[ConfounderConfig] | None = None
 
     def __post_init__(self) -> None:
         if self.highpass_freq < 0:
@@ -191,7 +201,15 @@ def load_config(path: str) -> AppConfig:
         raise ValueError(msg)
 
     mqtt = MqttConfig(**raw["mqtt"])
-    cameras = [CameraConfig(**cam) for cam in raw["cameras"]]
+    cameras = []
+    for cam_raw in raw["cameras"]:
+        cam_dict = dict(cam_raw)
+        confounders_raw = cam_dict.pop("confounders", None)
+        if confounders_raw:
+            cam_dict["confounders"] = [
+                ConfounderConfig(**c) for c in confounders_raw
+            ]
+        cameras.append(CameraConfig(**cam_dict))
 
     openobserve = None
     if "openobserve" in raw:
