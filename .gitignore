@@ -16,3 +16,9 @@ tests/e2e/samples/
 
 # Notion sync state
 .notion-sync.*
+task_plan.md
+findings.md
+progress.md
+.entity-issue-baseline.json
+.entity-issue-history.json
+uv.lock

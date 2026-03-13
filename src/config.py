@@ -40,6 +40,7 @@ class CameraConfig:
     adaptive_margin_db: float = 8.0
     go2rtc_stream: str | None = None
     confounders: list[ConfounderConfig] | None = None
+    disabled_groups: list[str] | None = None
 
     def __post_init__(self) -> None:
         if self.highpass_freq < 0:

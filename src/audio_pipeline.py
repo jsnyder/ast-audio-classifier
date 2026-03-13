@@ -28,6 +28,34 @@ PRE_TRIGGER_CHUNKS = 5  # 500ms at 100ms/chunk
 _background_tasks: set[asyncio.Task[None]] = set()
 
 
+def compute_spectral_flatness(audio_float32: np.ndarray) -> float:
+    """Compute spectral flatness (Wiener entropy) of an audio signal.
+
+    Returns a value in [0, 1] where:
+      - 0.0 = pure tone (single frequency)
+      - 1.0 = white noise (flat spectrum)
+
+    Low flatness (< 0.1) with narrow bandwidth suggests codec/AGC artifacts.
+    """
+    if len(audio_float32) < 256:
+        return 1.0  # Too short to analyze, assume broadband
+
+    # Compute magnitude spectrum
+    spectrum = np.abs(np.fft.rfft(audio_float32))
+    # Avoid log(0)
+    spectrum = np.maximum(spectrum, 1e-10)
+
+    # Spectral flatness = geometric mean / arithmetic mean
+    log_mean = np.mean(np.log(spectrum))
+    geo_mean = np.exp(log_mean)
+    arith_mean = np.mean(spectrum)
+
+    if arith_mean < 1e-10:
+        return 1.0
+
+    return float(geo_mean / arith_mean)
+
+
 def compute_rms_db(pcm_int16: np.ndarray) -> float:
     """Compute RMS dB level from 16-bit PCM samples.
 

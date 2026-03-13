@@ -59,6 +59,7 @@ def _group_to_prompts(group: str) -> list[str]:
         "knock": ["someone knocking on a door"],
         "door": ["a door opening or closing", "a door slamming"],
         "cabinet": ["a cupboard or drawer opening"],
+        "wind": ["turbulent wind noise outdoors", "wind buffeting an outdoor microphone", "wind blowing against a building", "heavy wind blowing", "a windy day outside"],
         "rain_storm": ["rain falling", "a thunderstorm"],
         "music": ["a song playing in the background", "ambient background music", "background music from a speaker", "music coming from a TV or speaker"],
         "vehicle": ["a vehicle driving", "a car passing by"],

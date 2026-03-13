@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 from dataclasses import replace
 
-from .audio_pipeline import AmbientMonitor, read_audio_clip, start_ffmpeg
+from .audio_pipeline import AmbientMonitor, compute_spectral_flatness, read_audio_clip, start_ffmpeg
 from .clap_verifier import CLAPVerifier
 from .classifier import ASTClassifier
 from .config import CameraConfig
@@ -331,6 +331,22 @@ class CameraStream:
                 self._state = StreamState.STREAMING
                 continue
 
+            # Spectral flatness check: skip pure tonal artifacts (codec/AGC)
+            FLATNESS_ARTIFACT_THRESHOLD = 0.05
+            flatness = compute_spectral_flatness(audio)
+            if flatness < FLATNESS_ARTIFACT_THRESHOLD:
+                logger.debug(
+                    "[%s] Skipping tonal artifact (flatness=%.4f)",
+                    self._camera.name, flatness,
+                )
+                log_event(
+                    "artifact_skipped",
+                    camera=self._camera.name,
+                    flatness=round(flatness, 4),
+                    db_level=round(trigger_db, 1),
+                )
+                continue
+
             # Classify with semaphore (one inference at a time)
             async with self._semaphore:
                 classifications = await asyncio.to_thread(
@@ -339,6 +355,12 @@ class CameraStream:
                     trigger_db,
                     self._confidence_threshold,
                 )
+                # Filter out disabled groups for this camera
+                if classifications and self._camera.disabled_groups:
+                    disabled = set(self._camera.disabled_groups)
+                    classifications = [
+                        c for c in classifications if c.group not in disabled
+                    ]
                 # CLAP verification (inside semaphore — sequential with AST)
                 suppressed: list = []
                 if classifications and self._clap_verifier is not None:

@@ -719,13 +719,16 @@ LABEL_GROUPS: dict[str, list[str]] = {
         "Drawer open or close",
     ],
     # --- Environment ---
+    "wind": [
+        "Wind",
+        "Wind noise (microphone)",
+    ],
     "rain_storm": [
         "Rain",
         "Raindrop",
         "Rain on surface",
         "Thunderstorm",
         "Thunder",
-        "Wind",
     ],
     "music": [
         "Music",

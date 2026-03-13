@@ -1,5 +1,5 @@
 name: AST Audio Classifier
-version: "0.5.9"
+version: "0.6.0"
 slug: ast-audio-classifier
 description: Audio Spectrogram Transformer sidecar for RTSP audio classification with MQTT auto-discovery
 url: https://github.com/jsnyder/home_assistant
@@ -71,6 +71,8 @@ schema:
       adaptive_threshold: "bool?"
       adaptive_margin_db: "float?"
       go2rtc_stream: "str?"
+      disabled_groups:
+        - "str?"
       confounders:
         - entity_id: str
           active_when: str

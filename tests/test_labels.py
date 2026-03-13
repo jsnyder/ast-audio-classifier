@@ -64,6 +64,7 @@ class TestLabelGroups:
             "door",
             "cabinet",
             # Environment
+            "wind",
             "rain_storm",
             "music",
             "vehicle",
