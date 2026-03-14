@@ -140,11 +140,10 @@ async def start_ffmpeg(
                     continue
                 if not line:
                     break
-                logger.warning(
-                    "ffmpeg[%s]: %s",
-                    process.pid,
-                    line.decode(errors="replace").rstrip(),
-                )
+                text = line.decode(errors="replace").rstrip()
+                # Redact RTSP credentials from ffmpeg error output
+                text = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", text)
+                logger.warning("ffmpeg[%s]: %s", process.pid, text)
         except Exception:
             logger.debug("ffmpeg stderr drain ended for pid=%s", process.pid)
 

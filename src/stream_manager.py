@@ -47,6 +47,9 @@ DISCOVERY_THRESHOLD = 3  # consecutive short-lived failures before URL discovery
 STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
 
 
+STUCK_THRESHOLD_SECONDS = 300  # 5 minutes of continuous failure → stuck
+
+
 class StreamState(enum.Enum):
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
@@ -55,6 +58,7 @@ class StreamState(enum.Enum):
     ERROR = "error"
     BACKOFF = "backoff"
     DISCOVERING = "discovering"
+    STUCK = "stuck"
 
 
 class CameraStream:
@@ -102,6 +106,9 @@ class CameraStream:
         self._judge_semaphore = asyncio.Semaphore(2)
         # Current effective URL (may be updated by discovery)
         self._effective_url: str = camera.rtsp_url
+        # Stuck-state tracking
+        self._failure_start: float = 0.0  # monotonic time of first failure in current run
+        self._is_stuck = False
 
         # Build adaptive threshold closure if enabled
         self._threshold_fn = None
@@ -181,6 +188,7 @@ class CameraStream:
                 await asyncio.wait_for(self._process.wait(), timeout=5.0)
             except TimeoutError:
                 self._process.kill()
+                await asyncio.wait_for(self._process.wait(), timeout=2.0)
         self._publisher.publish_camera_offline(self._camera.name)
 
     async def _attempt_discovery(self) -> None:
@@ -230,6 +238,71 @@ class CameraStream:
             )
             self._effective_url = self._camera.rtsp_url
 
+    async def _send_stuck_notification(self) -> None:
+        """Send a HA persistent notification when stream enters stuck state."""
+        try:
+            import json
+            import os
+            from urllib.request import Request, urlopen
+
+            token = os.environ.get("SUPERVISOR_TOKEN")
+            if not token:
+                logger.debug("No SUPERVISOR_TOKEN, skipping stuck notification")
+                return
+
+            data = json.dumps({
+                "title": f"AST Audio: {self._camera.name} stream stuck",
+                "message": (
+                    f"Camera **{self._camera.name}** audio stream has been failing "
+                    f"for over {STUCK_THRESHOLD_SECONDS // 60} minutes. "
+                    f"Check Scrypted/RTSP source."
+                ),
+                "notification_id": f"ast_stream_stuck_{self._camera.name}",
+            }).encode()
+
+            req = Request(
+                "http://supervisor/core/api/services/persistent_notification/create",
+                data=data,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            await asyncio.to_thread(urlopen, req, timeout=5)
+            logger.info("[%s] Sent stuck notification to HA", self._camera.name)
+        except Exception:
+            logger.debug("[%s] Failed to send stuck notification", self._camera.name, exc_info=True)
+
+    async def _clear_stuck_notification(self) -> None:
+        """Clear the HA persistent notification when stream recovers."""
+        try:
+            import json
+            import os
+            from urllib.request import Request, urlopen
+
+            token = os.environ.get("SUPERVISOR_TOKEN")
+            if not token:
+                return
+
+            data = json.dumps({
+                "notification_id": f"ast_stream_stuck_{self._camera.name}",
+            }).encode()
+
+            req = Request(
+                "http://supervisor/core/api/services/persistent_notification/dismiss",
+                data=data,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            await asyncio.to_thread(urlopen, req, timeout=5)
+            logger.info("[%s] Cleared stuck notification", self._camera.name)
+        except Exception:
+            logger.debug("[%s] Failed to clear stuck notification", self._camera.name, exc_info=True)
+
     async def _run(self) -> None:
         """Main loop: connect, stream, classify, reconnect on failure."""
         while True:
@@ -247,7 +320,6 @@ class CameraStream:
                     highpass_freq=self._camera.highpass_freq,
                 )
                 self._state = StreamState.STREAMING
-                self._backoff = self._camera.reconnect_interval
                 self._publisher.publish_camera_online(self._camera.name)
                 log_event("stream_online", camera=self._camera.name)
                 logger.info("[%s] Streaming", self._camera.name)
@@ -268,16 +340,29 @@ class CameraStream:
                     except (TimeoutError, ProcessLookupError):
                         with contextlib.suppress(ProcessLookupError):
                             self._process.kill()
+                        with contextlib.suppress(TimeoutError, ProcessLookupError):
+                            await asyncio.wait_for(self._process.wait(), timeout=2.0)
                     self._process = None
                 self._publisher.publish_camera_offline(self._camera.name)
 
             # Track stream stability for discovery decisions
             stream_duration = time.monotonic() - stream_start
             if stream_duration >= STABLE_STREAM_SECONDS:
-                # Stream was stable — reset failure counter
+                # Stream was stable — reset failure counter, backoff, and stuck state
                 self._consecutive_failures = 0
+                self._failure_start = 0.0
+                self._backoff = self._camera.reconnect_interval
+                if self._is_stuck:
+                    self._is_stuck = False
+                    self._backoff = self._camera.reconnect_interval
+                    logger.info("[%s] Stream recovered from stuck state", self._camera.name)
+                    log_event("stream_recovered", camera=self._camera.name)
+                    self._publisher.publish_camera_online(self._camera.name)
+                    await self._clear_stuck_notification()
             else:
                 self._consecutive_failures += 1
+                if self._failure_start == 0.0:
+                    self._failure_start = time.monotonic()
                 logger.warning(
                     "[%s] Stream died after %.1fs (< %ds), failure %d/%d",
                     self._camera.name,
@@ -291,11 +376,37 @@ class CameraStream:
             if self._consecutive_failures >= DISCOVERY_THRESHOLD:
                 await self._attempt_discovery()
                 self._consecutive_failures = 0
+                # Don't reset backoff — let it keep growing toward MAX_BACKOFF
+
+            # Check for stuck state (continuous failure for too long)
+            if (
+                self._failure_start > 0
+                and time.monotonic() - self._failure_start >= STUCK_THRESHOLD_SECONDS
+                and not self._is_stuck
+            ):
+                self._is_stuck = True
+                self._state = StreamState.STUCK
+                self._backoff = MAX_BACKOFF
+                logger.error(
+                    "[%s] Stream STUCK — failing for %.0fs",
+                    self._camera.name,
+                    time.monotonic() - self._failure_start,
+                )
+                log_event(
+                    "stream_stuck",
+                    camera=self._camera.name,
+                    failure_duration=round(time.monotonic() - self._failure_start, 1),
+                )
+                await self._send_stuck_notification()
 
             # Backoff before reconnect
-            self._state = StreamState.BACKOFF
+            if not self._is_stuck:
+                self._state = StreamState.BACKOFF
             logger.info(
-                "[%s] Reconnecting in %ds", self._camera.name, self._backoff
+                "[%s] Reconnecting in %ds%s",
+                self._camera.name,
+                self._backoff,
+                " (STUCK)" if self._is_stuck else "",
             )
             await asyncio.sleep(self._backoff)
             self._backoff = min(self._backoff * 2, MAX_BACKOFF)

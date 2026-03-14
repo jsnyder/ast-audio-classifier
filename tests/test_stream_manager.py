@@ -74,7 +74,7 @@ class TestStreamState:
         assert StreamState.BACKOFF.value == "backoff"
 
     def test_total_member_count(self):
-        assert len(StreamState) == 7
+        assert len(StreamState) == 8
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +514,7 @@ class TestDiscoveringState:
         assert StreamState.DISCOVERING.value == "discovering"
 
     def test_total_member_count_with_discovering(self):
-        assert len(StreamState) == 7
+        assert len(StreamState) == 8
 
 
 # ---------------------------------------------------------------------------
