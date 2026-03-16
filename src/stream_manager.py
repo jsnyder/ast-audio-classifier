@@ -33,6 +33,8 @@ from .config import CameraConfig
 from .mqtt_publisher import MqttPublisher
 from .openobserve import log_event
 
+from .url_resolver import ScryptedApiResolver
+
 if TYPE_CHECKING:
     from .confounder_monitor import ConfounderMonitor
     from .event_consolidator import EventConsolidator
@@ -76,7 +78,7 @@ class CameraStream:
         llm_judge: LLMJudge | None = None,
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
-        resolver: ScryptedUrlResolver | None = None,
+        resolver: ScryptedApiResolver | ScryptedUrlResolver | None = None,
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
     ) -> None:
@@ -194,8 +196,14 @@ class CameraStream:
     async def _attempt_discovery(self) -> None:
         """Try to discover a fresh RTSP URL via the resolver.
 
-        For cameras with go2rtc_stream, discovery only updates the go2rtc
-        proxy URL (never reverts to a direct camera URL).
+        Resolution chain:
+        1. ScryptedApiResolver (if resolver has .resolve(device_id) and
+           scrypted_device_id is configured) — authoritative, live URL
+        2. go2rtc stable proxy fallback (if go2rtc_stream is configured)
+        3. Revert to original URL
+
+        For cameras with go2rtc_stream, discovery never reverts to a direct
+        camera URL (prevents competing connections).
         """
         if not self._auto_discovery or self._resolver is None:
             return
@@ -207,14 +215,34 @@ class CameraStream:
             re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self._effective_url),
         )
 
-        try:
-            resolved = await self._resolver.resolve(
-                self._camera.rtsp_url,
-                go2rtc_stream=self._camera.go2rtc_stream,
+        resolved = None
+
+        # Step 1: Try ScryptedApiResolver with device ID
+        if self._camera.scrypted_device_id is not None and isinstance(
+            self._resolver, ScryptedApiResolver
+        ):
+            try:
+                resolved = await self._resolver.resolve(
+                    self._camera.scrypted_device_id,
+                )
+            except Exception:
+                logger.debug(
+                    "[%s] Scrypted API discovery failed",
+                    self._camera.name,
+                    exc_info=True,
+                )
+
+        # Step 2: Fall back to go2rtc stable proxy if camera has a stream name
+        if resolved is None and self._camera.go2rtc_stream:
+            fallback_url = (
+                f"rtsp://a889bffc-go2rtc:8554/{self._camera.go2rtc_stream}"
             )
-        except Exception:
-            logger.debug("[%s] URL discovery failed", self._camera.name, exc_info=True)
-            resolved = None
+            logger.info(
+                "[%s] Falling back to go2rtc proxy: %s",
+                self._camera.name,
+                fallback_url,
+            )
+            resolved = fallback_url
 
         if resolved is not None:
             safe = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", resolved)
@@ -594,7 +622,7 @@ class StreamManager:
         llm_judge: LLMJudge | None = None,
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
-        resolver: ScryptedUrlResolver | None = None,
+        resolver: ScryptedApiResolver | ScryptedUrlResolver | None = None,
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
     ) -> None:

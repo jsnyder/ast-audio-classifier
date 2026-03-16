@@ -41,6 +41,8 @@ if [ -f "$OPTIONS_FILE" ]; then
     MQTT_USER="${SVC_USER:-$(jq -r '.mqtt_username // ""' "$OPTIONS_FILE")}"
     MQTT_PASS="${SVC_PASS:-$(jq -r '.mqtt_password // ""' "$OPTIONS_FILE")}"
 
+    SCRYPTED_API_URL=$(jq -r '.scrypted_api_url // ""' "$OPTIONS_FILE")
+
     CONFIDENCE=$(jq -r '.confidence_threshold // 0.15' "$OPTIONS_FILE")
     AUTO_OFF=$(jq -r '.auto_off_seconds // 30' "$OPTIONS_FILE")
     CLIP_DUR=$(jq -r '.clip_duration_seconds // 3' "$OPTIONS_FILE")
@@ -80,6 +82,7 @@ YAML
         CAM_HPF=$(jq -r ".cameras[$i].highpass_freq // 0" "$OPTIONS_FILE")
         CAM_ADAPT=$(jq -r ".cameras[$i].adaptive_threshold // false" "$OPTIONS_FILE")
         CAM_MARGIN=$(jq -r ".cameras[$i].adaptive_margin_db // 8.0" "$OPTIONS_FILE")
+        CAM_SCRYPTED_ID=$(jq -r ".cameras[$i].scrypted_device_id // \"\"" "$OPTIONS_FILE")
 
         cat >> "$CONFIG_PATH" <<YAML
   - name: "${CAM_NAME}"
@@ -92,6 +95,9 @@ YAML
     adaptive_threshold: ${CAM_ADAPT}
     adaptive_margin_db: ${CAM_MARGIN}
 YAML
+        if [ -n "$CAM_SCRYPTED_ID" ] && [ "$CAM_SCRYPTED_ID" != "null" ]; then
+            echo "    scrypted_device_id: \"${CAM_SCRYPTED_ID}\"" >> "$CONFIG_PATH"
+        fi
 
         # Confounders (optional per-camera)
         CONF_COUNT=$(jq ".cameras[$i].confounders | length" "$OPTIONS_FILE" 2>/dev/null || echo 0)
@@ -217,6 +223,14 @@ YAML
                 echo "    - \"${NS_CAM}\"" >> "$CONFIG_PATH"
             done
         fi
+    fi
+
+    # Scrypted API URL (optional — enables direct RTSP URL resolution)
+    if [ -n "$SCRYPTED_API_URL" ] && [ "$SCRYPTED_API_URL" != "null" ] && [ "$SCRYPTED_API_URL" != "" ]; then
+        cat >> "$CONFIG_PATH" <<YAML
+
+scrypted_api_url: "${SCRYPTED_API_URL}"
+YAML
     fi
 
     # Consolidated events (optional)

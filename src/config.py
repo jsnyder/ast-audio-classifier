@@ -39,6 +39,7 @@ class CameraConfig:
     adaptive_threshold: bool = False
     adaptive_margin_db: float = 8.0
     go2rtc_stream: str | None = None
+    scrypted_device_id: str | None = None
     confounders: list[ConfounderConfig] | None = None
     disabled_groups: list[str] | None = None
 
@@ -137,6 +138,7 @@ class AppConfig:
     clap: CLAPOptions | None = None
     llm_judge: LLMJudgeConfig | None = None
     noise_stress: NoiseStressConfig | None = None
+    scrypted_api_url: str | None = None
     confidence_threshold: float = 0.15
     auto_off_seconds: int = 30
     clip_duration_seconds: int = 3
@@ -237,6 +239,7 @@ def load_config(path: str) -> AppConfig:
         clap=clap,
         llm_judge=llm_judge,
         noise_stress=noise_stress,
+        scrypted_api_url=raw.get("scrypted_api_url"),
         confidence_threshold=defaults.get("confidence_threshold", 0.15),
         auto_off_seconds=defaults.get("auto_off_seconds", 30),
         clip_duration_seconds=defaults.get("clip_duration_seconds", 3),

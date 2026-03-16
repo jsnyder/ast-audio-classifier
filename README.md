@@ -4,7 +4,7 @@ Real-time audio event detection for Home Assistant using the [Audio Spectrogram 
 
 ## Features
 
-- **AST classification** across 527 AudioSet labels, grouped into 28 meaningful categories
+- **AST classification** across 527 AudioSet labels, grouped into 31 meaningful categories
 - **CLAP zero-shot verification** using [LAION CLAP](https://huggingface.co/laion/clap-htsat-fused) to confirm, suppress, or override AST predictions
 - **MQTT auto-discovery** creates Home Assistant binary sensors automatically
 - **Multi-camera support** with per-camera thresholds, cooldowns, and high-pass filtering
@@ -20,7 +20,7 @@ Real-time audio event detection for Home Assistant using the [Audio Spectrogram 
 
 1. Connects to RTSP audio streams from your cameras (via FFmpeg)
 2. Buffers 3-second audio clips when sound exceeds a configurable dB threshold
-3. Runs the AST model to classify the audio into one of 28 groups
+3. Runs the AST model to classify the audio into one of 31 groups
 4. Optionally verifies with CLAP zero-shot classification
 5. Publishes detections to MQTT, creating Home Assistant binary sensors
 
@@ -127,21 +127,41 @@ llm_judge:
 
 ## Detection Groups
 
-The 527 AudioSet labels are mapped to these binary sensor groups:
+The AST model outputs 527 AudioSet labels, of which 135 are mapped to these binary sensor groups:
 
 | Group | Examples |
 |-------|----------|
-| `dog_bark` | Bark, Growling, Whimper |
-| `cat_meow` | Meow, Purr, Hiss, Cat |
 | `smoke_alarm` | Smoke detector, Fire alarm |
-| `glass_break` | Shatter, Breaking glass |
-| `doorbell` | Ding-dong, Doorbell |
-| `speech` | Speech, Conversation, Narration |
-| `crying` | Crying, Baby cry, Wail |
-| `music` | Music, Singing, Musical instrument |
-| `siren` | Siren, Emergency vehicle |
-| `gunshot` | Gunshot, Explosion |
-| ... | 18 more groups |
+| `glass_break` | Shatter, Smash, Breaking |
+| `siren` | Siren, Civil defense siren, Police car |
+| `gunshot_explosion` | Gunshot, Explosion, Boom |
+| `screaming` | Screaming, Shout, Yell |
+| `dog_bark` | Dog, Bark, Bow-wow |
+| `cat_meow` | Cat, Purr, Meow |
+| `crying` | Baby cry, Crying, Wail |
+| `speech` | Speech, Conversation, Child speech |
+| `cough_sneeze` | Cough, Sneeze, Throat clearing |
+| `footsteps` | Walk, Run, Shuffle |
+| `doorbell` | Doorbell, Ding-dong |
+| `knock` | Knock, Tap |
+| `door` | Door, Sliding door, Slam |
+| `cabinet` | Cupboard open or close, Drawer open or close |
+| `wind` | Wind, Wind noise |
+| `rain_storm` | Rain, Raindrop, Rain on surface |
+| `music` | Music, Pop music, Rock music |
+| `vehicle` | Vehicle, Motor vehicle, Car |
+| `car_horn` | Vehicle horn, Toot, Air horn |
+| `aircraft` | Aircraft, Aircraft engine, Jet engine |
+| `vacuum_cleaner` | Vacuum cleaner |
+| `water_running` | Water tap, Sink, Bathtub |
+| `kitchen_appliance` | Microwave oven, Blender, Dishes |
+| `power_tools` | Power tool, Drill, Chainsaw |
+| `alarm_beep` | Alarm, Alarm clock, Buzzer |
+| `hvac_mechanical` | Mechanical fan, Air conditioning, Engine |
+| `mechanical_anomaly` | Engine knocking, Squeal, Creak |
+| `water_leak` | Drip, Trickle, Gush |
+| `electrical_anomaly` | Buzz, Mains hum, Distortion |
+| `media` | Television, Radio |
 
 Each group becomes a Home Assistant binary sensor, e.g., `binary_sensor.ast_audio_classifier_living_room_dog_bark`.
 
@@ -152,6 +172,7 @@ Each group becomes a Home Assistant binary sensor, e.g., `binary_sensor.ast_audi
 | `/health` | GET | Health check with model status and camera states |
 | `/classify` | POST | Upload a WAV file for classification |
 | `/status` | GET | Detailed diagnostics |
+| `/status/cameras` | GET | Per-camera stream status |
 
 ## Development
 

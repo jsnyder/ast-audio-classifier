@@ -227,6 +227,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 len(cameras_with_confounders),
             )
 
+        # Optional: Scrypted API resolver for direct RTSP URL discovery
+        app.state.resolver = None
+        auto_discovery = False
+        if config.scrypted_api_url:
+            from .url_resolver import ScryptedApiResolver
+
+            app.state.resolver = ScryptedApiResolver(config.scrypted_api_url)
+            auto_discovery = True
+            logger.info(
+                "Scrypted API resolver enabled: %s", config.scrypted_api_url
+            )
+
         # Start camera streams
         app.state.stream_manager = StreamManager(
             cameras=config.cameras,
@@ -239,6 +251,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
             consolidator=app.state.consolidator,
             noise_stress=app.state.noise_stress,
             confounder_monitor=app.state.confounder_monitor,
+            resolver=app.state.resolver,
+            auto_discovery=auto_discovery,
         )
         app.state.stream_manager.start_all()
         app.state.start_time = time.monotonic()

@@ -1,5 +1,5 @@
 name: AST Audio Classifier
-version: "0.6.0"
+version: "0.7.0"
 slug: ast-audio-classifier
 description: Audio Spectrogram Transformer sidecar for RTSP audio classification with MQTT auto-discovery
 url: https://github.com/jsnyder/home_assistant
@@ -22,6 +22,7 @@ options:
   mqtt_port: 1883
   mqtt_username: ""
   mqtt_password: ""
+  scrypted_api_url: ""
   cameras: []
   confidence_threshold: 0.15
   auto_off_seconds: 30
@@ -61,6 +62,7 @@ schema:
   mqtt_port: port
   mqtt_username: str
   mqtt_password: password
+  scrypted_api_url: "str?"
   cameras:
     - name: str
       rtsp_url: str
@@ -72,6 +74,7 @@ schema:
       adaptive_threshold: "bool?"
       adaptive_margin_db: "float?"
       go2rtc_stream: "str?"
+      scrypted_device_id: "str?"
       disabled_groups:
         - "str?"
       confounders:
