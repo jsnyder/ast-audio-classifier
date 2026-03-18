@@ -44,6 +44,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_CRED_RE = re.compile(r"://([^:]+):([^@]+)@")
+
 MAX_BACKOFF = 60  # seconds
 DISCOVERY_THRESHOLD = 3  # consecutive short-lived failures before URL discovery
 STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
@@ -111,6 +113,7 @@ class CameraStream:
         # Stuck-state tracking
         self._failure_start: float = 0.0  # monotonic time of first failure in current run
         self._is_stuck = False
+        self._fresh_discovery = False  # set when discovery just found a new URL
 
         # Build adaptive threshold closure if enabled
         self._threshold_fn = None
@@ -161,14 +164,7 @@ class CameraStream:
         return info
 
     def _get_connect_url(self) -> str:
-        """Return the URL to connect to.
-
-        For cameras with go2rtc_stream configured, always use the go2rtc
-        proxy URL.  This ensures we never open a direct connection to the
-        camera, which would compete with Scrypted's single-stream slot.
-        """
-        if self._camera.go2rtc_stream:
-            return self._effective_url
+        """Return the URL to connect to."""
         return self._effective_url
 
     def start(self) -> asyncio.Task:
@@ -212,7 +208,7 @@ class CameraStream:
         logger.info(
             "[%s] Attempting URL discovery (current: %s)",
             self._camera.name,
-            re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self._effective_url),
+            _CRED_RE.sub(r"://\1:***@", self._effective_url),
         )
 
         resolved = None
@@ -245,7 +241,7 @@ class CameraStream:
             resolved = fallback_url
 
         if resolved is not None:
-            safe = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", resolved)
+            safe = _CRED_RE.sub(r"://\1:***@", resolved)
             logger.info("[%s] Discovered URL: %s", self._camera.name, safe)
             self._effective_url = resolved
         elif self._camera.go2rtc_stream:
@@ -400,11 +396,21 @@ class CameraStream:
                     DISCOVERY_THRESHOLD,
                 )
 
-            # Trigger URL discovery after repeated short-lived streams
-            if self._consecutive_failures >= DISCOVERY_THRESHOLD:
+            # Trigger URL discovery after repeated short-lived streams,
+            # or on every attempt when stuck (Scrypted ephemeral sessions
+            # require fresh URLs right before each connection).
+            self._fresh_discovery = False
+            if self._consecutive_failures >= DISCOVERY_THRESHOLD or self._is_stuck:
+                old_url = self._effective_url
                 await self._attempt_discovery()
-                self._consecutive_failures = 0
-                # Don't reset backoff — let it keep growing toward MAX_BACKOFF
+                if not self._is_stuck:
+                    self._consecutive_failures = 0
+                # If discovery found a new URL, try it immediately —
+                # Scrypted creates on-demand rebroadcast sessions that
+                # expire within seconds if nobody connects.
+                if self._effective_url != old_url:
+                    self._fresh_discovery = True
+                    self._backoff = 1
 
             # Check for stuck state (continuous failure for too long)
             if (
@@ -414,7 +420,8 @@ class CameraStream:
             ):
                 self._is_stuck = True
                 self._state = StreamState.STUCK
-                self._backoff = MAX_BACKOFF
+                if not self._fresh_discovery:
+                    self._backoff = MAX_BACKOFF
                 logger.error(
                     "[%s] Stream STUCK — failing for %.0fs",
                     self._camera.name,

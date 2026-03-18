@@ -460,6 +460,8 @@ class TestScryptedApiResolver:
             ["rtsp://admin:pass@192.168.0.107:40004/abc123"],
         )
         resp = MagicMock()
+        resp.__enter__ = MagicMock(return_value=resp)
+        resp.__exit__ = MagicMock(return_value=False)
         resp.status = 200
         resp.read.return_value = body
 
@@ -477,6 +479,8 @@ class TestScryptedApiResolver:
             ["rtsp://admin:pass@192.168.0.107:40001/xyz", "rtsp://127.0.0.1:40001/xyz"],
         )
         resp = MagicMock()
+        resp.__enter__ = MagicMock(return_value=resp)
+        resp.__exit__ = MagicMock(return_value=False)
         resp.status = 200
         resp.read.return_value = body
 
@@ -532,6 +536,8 @@ class TestScryptedApiResolver:
             "streams": [],
         }).encode()
         resp = MagicMock()
+        resp.__enter__ = MagicMock(return_value=resp)
+        resp.__exit__ = MagicMock(return_value=False)
         resp.status = 200
         resp.read.return_value = body
 
@@ -550,6 +556,8 @@ class TestScryptedApiResolver:
             "streams": [{"id": "default", "name": "Default", "error": "Camera offline"}],
         }).encode()
         resp = MagicMock()
+        resp.__enter__ = MagicMock(return_value=resp)
+        resp.__exit__ = MagicMock(return_value=False)
         resp.status = 200
         resp.read.return_value = body
 
@@ -564,6 +572,8 @@ class TestScryptedApiResolver:
         """Resolver constructs the correct API URL for the device."""
         body = _make_scrypted_stream_response("99", "Front Door", ["rtsp://x:1234/y"])
         resp = MagicMock()
+        resp.__enter__ = MagicMock(return_value=resp)
+        resp.__exit__ = MagicMock(return_value=False)
         resp.status = 200
         resp.read.return_value = body
 
@@ -584,6 +594,8 @@ class TestScryptedApiResolver:
         """Trailing slash in base URL doesn't cause double-slash."""
         body = _make_scrypted_stream_response("99", "Front Door", ["rtsp://x:1234/y"])
         resp = MagicMock()
+        resp.__enter__ = MagicMock(return_value=resp)
+        resp.__exit__ = MagicMock(return_value=False)
         resp.status = 200
         resp.read.return_value = body
 
@@ -601,6 +613,8 @@ class TestScryptedApiResolver:
         """Resolver uses an SSL context with verification disabled."""
         body = _make_scrypted_stream_response("99", "Cam", ["rtsp://x:1/y"])
         resp = MagicMock()
+        resp.__enter__ = MagicMock(return_value=resp)
+        resp.__exit__ = MagicMock(return_value=False)
         resp.status = 200
         resp.read.return_value = body
 

@@ -205,6 +205,7 @@ def load_config(path: str) -> AppConfig:
 
     mqtt = MqttConfig(**raw["mqtt"])
     cameras = []
+    seen_names: set[str] = set()
     for cam_raw in raw["cameras"]:
         cam_dict = dict(cam_raw)
         confounders_raw = cam_dict.pop("confounders", None)
@@ -212,7 +213,12 @@ def load_config(path: str) -> AppConfig:
             cam_dict["confounders"] = [
                 ConfounderConfig(**c) for c in confounders_raw
             ]
-        cameras.append(CameraConfig(**cam_dict))
+        cam = CameraConfig(**cam_dict)
+        if cam.name in seen_names:
+            msg = f"Duplicate camera name: {cam.name!r}"
+            raise ValueError(msg)
+        seen_names.add(cam.name)
+        cameras.append(cam)
 
     openobserve = None
     if "openobserve" in raw:

@@ -132,7 +132,8 @@ class ScryptedApiResolver:
         """Fetch JSON from the Scrypted API (runs in thread)."""
         req = Request(url)
         try:
-            resp = urlopen(req, timeout=self._timeout, context=self._ssl_ctx)
+            with urlopen(req, timeout=self._timeout, context=self._ssl_ctx) as resp:
+                body = resp.read()
         except HTTPError as e:
             if e.code == 404:
                 logger.debug("Scrypted API: device not found (404) for %s", url)
@@ -142,7 +143,6 @@ class ScryptedApiResolver:
         except (URLError, OSError, TimeoutError):
             logger.debug("Scrypted API unreachable: %s", url, exc_info=True)
             return None
-        body = resp.read()
         return json.loads(body)
 
 
@@ -280,6 +280,7 @@ class ScryptedUrlResolver:
         """Send an RTSP OPTIONS request to verify connectivity."""
         try:
             sock = socket.create_connection((host, port), timeout=5)
+            sock.settimeout(5)
             sock.sendall(b"OPTIONS rtsp://%b:%d/ RTSP/1.0\r\nCSeq: 1\r\n\r\n"
                          % (host.encode(), port))
             data = sock.recv(1024)

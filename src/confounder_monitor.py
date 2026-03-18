@@ -161,23 +161,25 @@ class ConfounderMonitor:
     def _poll_states_sync(self) -> None:
         """Synchronous polling — runs in a thread to avoid blocking the event loop.
 
-        Uses the bulk /api/states endpoint (single HTTP call) and atomically
-        replaces the state dict so readers on the event loop always see a
-        consistent snapshot.
+        Fetches only the configured confounder entities (one HTTP call each)
+        and atomically replaces the state dict so readers on the event loop
+        always see a consistent snapshot.
         """
         import json
         import urllib.request
 
-        url = "http://supervisor/core/api/states"
         headers = {"Authorization": f"Bearer {self._supervisor_token}"}
-        req = urllib.request.Request(url, headers=headers)
+        new_states: dict[str, str] = {}
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                all_states = json.loads(resp.read())
-            state_map = {s["entity_id"]: s["state"] for s in all_states}
-            new_states: dict[str, str] = {}
             for entity_id in self._entity_ids:
-                new_state = state_map.get(entity_id, "unavailable")
+                url = f"http://supervisor/core/api/states/{entity_id}"
+                req = urllib.request.Request(url, headers=headers)
+                try:
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        data = json.loads(resp.read())
+                    new_state = data.get("state", "unavailable")
+                except Exception:
+                    new_state = "unavailable"
                 old_state = self._entity_states.get(entity_id)
                 if old_state != new_state:
                     logger.debug(
