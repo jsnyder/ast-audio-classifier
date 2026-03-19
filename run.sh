@@ -233,6 +233,39 @@ scrypted_api_url: "${SCRYPTED_API_URL}"
 YAML
     fi
 
+    # Per-group thresholds (hardcoded from LLM judge accuracy data)
+    # car_horn=6%, gunshot_explosion=17%, music=29%, rain_storm=31%,
+    # cough_sneeze=31%, vehicle=33%, hvac_mechanical=44%, cat_meow=50%, aircraft=51%
+    cat >> "$CONFIG_PATH" <<'YAML'
+
+groups:
+  car_horn:
+    enabled: false
+  gunshot_explosion:
+    enabled: false
+  music:
+    confidence_threshold: 0.60
+  rain_storm:
+    confidence_threshold: 0.55
+  cough_sneeze:
+    confidence_threshold: 0.55
+  vehicle:
+    confidence_threshold: 0.65
+  hvac_mechanical:
+    confidence_threshold: 0.45
+  cat_meow:
+    confidence_threshold: 0.40
+  aircraft:
+    confidence_threshold: 0.40
+YAML
+
+    # Weather entity for dynamic threshold adjustment (optional)
+    WEATHER_ENTITY=$(jq -r '.weather_entity // ""' "$OPTIONS_FILE")
+    if [ -n "$WEATHER_ENTITY" ] && [ "$WEATHER_ENTITY" != "null" ] && [ "$WEATHER_ENTITY" != "" ]; then
+        echo "" >> "$CONFIG_PATH"
+        echo "weather_entity: \"${WEATHER_ENTITY}\"" >> "$CONFIG_PATH"
+    fi
+
     # Consolidated events (optional)
     CONSOLIDATED_ENABLED=$(jq -r '.consolidated_enabled // false' "$OPTIONS_FILE")
     CONSOLIDATED_WINDOW=$(jq -r '.consolidated_window_seconds // 5.0' "$OPTIONS_FILE")

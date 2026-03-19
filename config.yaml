@@ -56,6 +56,7 @@ options:
   noise_stress_decay_half_life: 180.0
   noise_stress_saturation: 25.0
   noise_stress_indoor_cameras: []
+  weather_entity: ""
 
 schema:
   mqtt_host: str
@@ -115,3 +116,4 @@ schema:
   noise_stress_saturation: "float?"
   noise_stress_indoor_cameras:
     - "str?"
+  weather_entity: "str?"
