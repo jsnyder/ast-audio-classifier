@@ -854,6 +854,8 @@ def get_top_group_match(
     threshold: float = 0.15,
     *,
     all_groups: bool = False,
+    group_thresholds: dict[str, float] | None = None,
+    disabled_groups: set[str] | None = None,
 ) -> tuple[str, float, str] | list[tuple[str, float, str]] | None:
     """Find the best matching group(s) from a list of (label, score) predictions.
 
@@ -861,6 +863,9 @@ def get_top_group_match(
         predictions: List of (label, score) tuples from the classifier.
         threshold: Minimum confidence to consider a match.
         all_groups: If True, return all matching groups sorted by confidence.
+        group_thresholds: Per-group threshold overrides. Groups not listed
+            fall back to *threshold*.
+        disabled_groups: Set of group names to exclude entirely.
 
     Returns:
         Single (group, confidence, raw_label) tuple, or list if all_groups=True,
@@ -872,7 +877,14 @@ def get_top_group_match(
         group = get_group_for_label(label)
         if group is None:
             continue
-        if score < threshold:
+        if disabled_groups and group in disabled_groups:
+            continue
+        effective_threshold = (
+            group_thresholds.get(group, threshold)
+            if group_thresholds is not None
+            else threshold
+        )
+        if score < effective_threshold:
             continue
         if group not in group_best or score > group_best[group][0]:
             group_best[group] = (score, label)

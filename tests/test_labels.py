@@ -279,3 +279,55 @@ class TestGetTopGroupMatch:
     def test_empty_predictions(self):
         result = get_top_group_match([], threshold=0.1)
         assert result is None
+
+
+class TestGetTopGroupMatchPerGroupThreshold:
+    """Test per-group threshold overrides."""
+
+    def test_per_group_threshold_filters_low_confidence(self):
+        predictions = [("Dog", 0.4), ("Music", 0.3)]
+        group_thresholds = {"music": 0.60}
+        result = get_top_group_match(
+            predictions, threshold=0.15, all_groups=True,
+            group_thresholds=group_thresholds,
+        )
+        groups = {r[0] for r in result}
+        assert "dog_bark" in groups
+        assert "music" not in groups
+
+    def test_per_group_threshold_allows_high_confidence(self):
+        predictions = [("Music", 0.75)]
+        group_thresholds = {"music": 0.60}
+        result = get_top_group_match(
+            predictions, threshold=0.15, all_groups=True,
+            group_thresholds=group_thresholds,
+        )
+        assert len(result) == 1
+        assert result[0][0] == "music"
+
+    def test_disabled_group_excluded(self):
+        predictions = [("Dog", 0.8), ("Vehicle horn, car horn, honking", 0.9)]
+        result = get_top_group_match(
+            predictions, threshold=0.15, all_groups=True,
+            disabled_groups={"car_horn"},
+        )
+        groups = {r[0] for r in result}
+        assert "dog_bark" in groups
+        assert "car_horn" not in groups
+
+    def test_no_per_group_thresholds_uses_global(self):
+        predictions = [("Dog", 0.3), ("Music", 0.3)]
+        result = get_top_group_match(
+            predictions, threshold=0.15, all_groups=True,
+        )
+        assert len(result) == 2
+
+    def test_single_result_mode_respects_per_group(self):
+        predictions = [("Music", 0.5), ("Dog", 0.3)]
+        group_thresholds = {"music": 0.60}
+        result = get_top_group_match(
+            predictions, threshold=0.15,
+            group_thresholds=group_thresholds,
+        )
+        assert result is not None
+        assert result[0] == "dog_bark"
