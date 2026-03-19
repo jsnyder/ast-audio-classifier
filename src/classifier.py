@@ -94,6 +94,9 @@ class ASTClassifier:
         audio: np.ndarray,
         db_level: float,
         threshold: float = 0.15,
+        *,
+        group_thresholds: dict[str, float] | None = None,
+        disabled_groups: set[str] | None = None,
     ) -> list[ClassificationResult]:
         """Classify an audio clip and return grouped results.
 
@@ -101,6 +104,8 @@ class ASTClassifier:
             audio: Float32 numpy array of audio samples at 16kHz.
             db_level: The dB level that triggered this classification.
             threshold: Minimum confidence for a group to be included.
+            group_thresholds: Per-group confidence overrides.
+            disabled_groups: Groups to exclude from results.
 
         Returns:
             List of ClassificationResult for groups above threshold.
@@ -129,7 +134,13 @@ class ASTClassifier:
         predictions = [(r["label"], r["score"]) for r in raw_results]
         top_5_global = [(r["label"], round(r["score"], 4)) for r in raw_results[:5]]
 
-        matches = get_top_group_match(predictions, threshold=threshold, all_groups=True)
+        matches = get_top_group_match(
+            predictions,
+            threshold=threshold,
+            all_groups=True,
+            group_thresholds=group_thresholds,
+            disabled_groups=disabled_groups,
+        )
         if not matches:
             return []
 

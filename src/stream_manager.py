@@ -29,7 +29,7 @@ from dataclasses import replace
 from .audio_pipeline import AmbientMonitor, compute_spectral_flatness, read_audio_clip, start_ffmpeg
 from .clap_verifier import CLAPVerifier
 from .classifier import ASTClassifier
-from .config import CameraConfig
+from .config import CameraConfig, GroupConfig
 from .mqtt_publisher import MqttPublisher
 from .openobserve import log_event
 
@@ -83,6 +83,7 @@ class CameraStream:
         resolver: ScryptedApiResolver | ScryptedUrlResolver | None = None,
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
+        groups_config: dict[str, GroupConfig] | None = None,
     ) -> None:
         self._camera = camera
         self._classifier = classifier
@@ -97,6 +98,27 @@ class CameraStream:
         self._resolver = resolver
         self._auto_discovery = auto_discovery
         self._confounder_monitor = confounder_monitor
+
+        # Build per-group thresholds and disabled set from config
+        self._group_thresholds: dict[str, float] | None = None
+        self._disabled_groups: set[str] | None = None
+        if groups_config:
+            thresholds: dict[str, float] = {}
+            disabled: set[str] = set()
+            for group_name, gcfg in groups_config.items():
+                if not gcfg.enabled:
+                    disabled.add(group_name)
+                elif gcfg.confidence_threshold is not None:
+                    thresholds[group_name] = gcfg.confidence_threshold
+            self._group_thresholds = thresholds or None
+            self._disabled_groups = disabled or None
+        # Merge per-camera disabled_groups into the global disabled set
+        if self._camera.disabled_groups:
+            cam_disabled = set(self._camera.disabled_groups)
+            if self._disabled_groups is None:
+                self._disabled_groups = cam_disabled
+            else:
+                self._disabled_groups = self._disabled_groups | cam_disabled
 
         self._state = StreamState.DISCONNECTED
         self._backoff = camera.reconnect_interval
@@ -500,13 +522,9 @@ class CameraStream:
                     audio,
                     trigger_db,
                     self._confidence_threshold,
+                    group_thresholds=self._group_thresholds,
+                    disabled_groups=self._disabled_groups,
                 )
-                # Filter out disabled groups for this camera
-                if classifications and self._camera.disabled_groups:
-                    disabled = set(self._camera.disabled_groups)
-                    classifications = [
-                        c for c in classifications if c.group not in disabled
-                    ]
                 # CLAP verification (inside semaphore — sequential with AST)
                 suppressed: list = []
                 if classifications and self._clap_verifier is not None:
@@ -632,6 +650,7 @@ class StreamManager:
         resolver: ScryptedApiResolver | ScryptedUrlResolver | None = None,
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
+        groups_config: dict[str, GroupConfig] | None = None,
     ) -> None:
         self._semaphore = asyncio.Semaphore(1)
         self._streams = [
@@ -649,6 +668,7 @@ class StreamManager:
                 resolver=resolver,
                 auto_discovery=auto_discovery,
                 confounder_monitor=confounder_monitor,
+                groups_config=groups_config,
             )
             for cam in cameras
         ]

@@ -253,6 +253,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             confounder_monitor=app.state.confounder_monitor,
             resolver=app.state.resolver,
             auto_discovery=auto_discovery,
+            groups_config=config.groups,
         )
         app.state.stream_manager.start_all()
         app.state.start_time = time.monotonic()
