@@ -84,6 +84,7 @@ class CameraStream:
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
         groups_config: dict[str, GroupConfig] | None = None,
+        weather_prior: object | None = None,
     ) -> None:
         self._camera = camera
         self._classifier = classifier
@@ -98,6 +99,7 @@ class CameraStream:
         self._resolver = resolver
         self._auto_discovery = auto_discovery
         self._confounder_monitor = confounder_monitor
+        self._weather_prior = weather_prior
 
         # Build per-group thresholds and disabled set from config
         self._group_thresholds: dict[str, float] | None = None
@@ -515,6 +517,15 @@ class CameraStream:
                 )
                 continue
 
+            # Apply weather prior modifiers to per-group thresholds
+            effective_group_thresholds = self._group_thresholds
+            if self._weather_prior is not None and self._group_thresholds is not None:
+                effective_group_thresholds = dict(self._group_thresholds)
+                for group, base_threshold in self._group_thresholds.items():
+                    mod = self._weather_prior.get_threshold_modifier(group)
+                    if mod != 0.0:
+                        effective_group_thresholds[group] = max(0.05, min(0.95, base_threshold + mod))
+
             # Classify with semaphore (one inference at a time)
             async with self._semaphore:
                 classifications = await asyncio.to_thread(
@@ -522,7 +533,7 @@ class CameraStream:
                     audio,
                     trigger_db,
                     self._confidence_threshold,
-                    group_thresholds=self._group_thresholds,
+                    group_thresholds=effective_group_thresholds,
                     disabled_groups=self._disabled_groups,
                 )
                 # CLAP verification (inside semaphore — sequential with AST)
@@ -651,6 +662,7 @@ class StreamManager:
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
         groups_config: dict[str, GroupConfig] | None = None,
+        weather_prior: object | None = None,
     ) -> None:
         self._semaphore = asyncio.Semaphore(1)
         self._streams = [
@@ -669,6 +681,7 @@ class StreamManager:
                 auto_discovery=auto_discovery,
                 confounder_monitor=confounder_monitor,
                 groups_config=groups_config,
+                weather_prior=weather_prior,
             )
             for cam in cameras
         ]

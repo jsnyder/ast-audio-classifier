@@ -227,6 +227,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 len(cameras_with_confounders),
             )
 
+        # Optional: Weather prior for dynamic outdoor threshold adjustment
+        app.state.weather_prior = None
+        if config.weather_entity:
+            from .weather_prior import WeatherPrior
+
+            app.state.weather_prior = WeatherPrior(
+                entity_id=config.weather_entity,
+                poll_interval=300.0,
+            )
+            await app.state.weather_prior.start()
+            logger.info("Weather prior enabled: %s", config.weather_entity)
+
         # Optional: Scrypted API resolver for direct RTSP URL discovery
         app.state.resolver = None
         auto_discovery = False
@@ -254,6 +266,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             resolver=app.state.resolver,
             auto_discovery=auto_discovery,
             groups_config=config.groups,
+            weather_prior=app.state.weather_prior,
         )
         app.state.stream_manager.start_all()
         app.state.start_time = time.monotonic()
@@ -271,6 +284,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             noise_stress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await noise_stress_task
+        wp = getattr(app.state, "weather_prior", None)
+        if wp:
+            await wp.stop()
         cm = getattr(app.state, "confounder_monitor", None)
         sm = getattr(app.state, "stream_manager", None)
         pub = getattr(app.state, "publisher", None)

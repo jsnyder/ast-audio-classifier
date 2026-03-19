@@ -153,6 +153,7 @@ class AppConfig:
     llm_judge: LLMJudgeConfig | None = None
     noise_stress: NoiseStressConfig | None = None
     groups: dict[str, GroupConfig] | None = None
+    weather_entity: str | None = None
     scrypted_api_url: str | None = None
     confidence_threshold: float = 0.15
     auto_off_seconds: int = 30
@@ -272,6 +273,7 @@ def load_config(path: str) -> AppConfig:
         llm_judge=llm_judge,
         noise_stress=noise_stress,
         groups=groups,
+        weather_entity=raw.get("weather_entity"),
         scrypted_api_url=raw.get("scrypted_api_url"),
         confidence_threshold=defaults.get("confidence_threshold", 0.15),
         auto_off_seconds=defaults.get("auto_off_seconds", 30),
