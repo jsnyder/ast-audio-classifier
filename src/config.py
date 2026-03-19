@@ -28,6 +28,20 @@ class ConfounderConfig:
 
 
 @dataclass
+class GroupConfig:
+    """Per-group threshold and enable/disable overrides."""
+
+    enabled: bool = True
+    confidence_threshold: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.confidence_threshold is not None:
+            if not (0.0 <= self.confidence_threshold <= 1.0):
+                msg = f"confidence_threshold must be in [0, 1], got {self.confidence_threshold}"
+                raise ValueError(msg)
+
+
+@dataclass
 class CameraConfig:
     name: str
     rtsp_url: str
@@ -138,6 +152,7 @@ class AppConfig:
     clap: CLAPOptions | None = None
     llm_judge: LLMJudgeConfig | None = None
     noise_stress: NoiseStressConfig | None = None
+    groups: dict[str, GroupConfig] | None = None
     scrypted_api_url: str | None = None
     confidence_threshold: float = 0.15
     auto_off_seconds: int = 30
@@ -237,6 +252,17 @@ def load_config(path: str) -> AppConfig:
     if "noise_stress" in raw:
         noise_stress = NoiseStressConfig(**raw["noise_stress"])
 
+    groups = None
+    if "groups" in raw:
+        from .labels import LABEL_GROUPS
+
+        groups = {}
+        for group_name, group_raw in raw["groups"].items():
+            if group_name not in LABEL_GROUPS:
+                msg = f"Unknown group in config: {group_name!r}"
+                raise ValueError(msg)
+            groups[group_name] = GroupConfig(**group_raw)
+
     defaults = raw.get("defaults", {})
     return AppConfig(
         mqtt=mqtt,
@@ -245,6 +271,7 @@ def load_config(path: str) -> AppConfig:
         clap=clap,
         llm_judge=llm_judge,
         noise_stress=noise_stress,
+        groups=groups,
         scrypted_api_url=raw.get("scrypted_api_url"),
         confidence_threshold=defaults.get("confidence_threshold", 0.15),
         auto_off_seconds=defaults.get("auto_off_seconds", 30),

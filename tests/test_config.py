@@ -7,6 +7,7 @@ from src.config import (
     AppConfig,
     CameraConfig,
     CLAPOptions,
+    GroupConfig,
     LLMJudgeConfig,
     MqttConfig,
     NoiseStressConfig,
@@ -672,3 +673,97 @@ class TestLoadConfigNoiseStress:
         assert cfg.noise_stress.update_interval_seconds == 30.0
         assert cfg.noise_stress.decay_half_life_seconds == 180.0
         assert cfg.noise_stress.saturation_constant == 25.0
+
+
+class TestGroupConfig:
+    def test_defaults(self):
+        cfg = GroupConfig()
+        assert cfg.enabled is True
+        assert cfg.confidence_threshold is None
+
+    def test_disabled(self):
+        cfg = GroupConfig(enabled=False)
+        assert cfg.enabled is False
+
+    def test_custom_threshold(self):
+        cfg = GroupConfig(confidence_threshold=0.35)
+        assert cfg.confidence_threshold == 0.35
+
+    def test_negative_threshold_raises(self):
+        with pytest.raises(ValueError, match="confidence_threshold must be in"):
+            GroupConfig(confidence_threshold=-0.1)
+
+    def test_threshold_above_one_raises(self):
+        with pytest.raises(ValueError, match="confidence_threshold must be in"):
+            GroupConfig(confidence_threshold=1.5)
+
+    def test_boundary_zero(self):
+        cfg = GroupConfig(confidence_threshold=0.0)
+        assert cfg.confidence_threshold == 0.0
+
+    def test_boundary_one(self):
+        cfg = GroupConfig(confidence_threshold=1.0)
+        assert cfg.confidence_threshold == 1.0
+
+
+class TestAppConfigGroups:
+    def test_groups_none_by_default(self):
+        cfg = AppConfig(
+            mqtt=MqttConfig(host="localhost"),
+            cameras=[CameraConfig(name="cam", rtsp_url="rtsp://host/s")],
+        )
+        assert cfg.groups is None
+
+    def test_groups_set(self):
+        cfg = AppConfig(
+            mqtt=MqttConfig(host="localhost"),
+            cameras=[CameraConfig(name="cam", rtsp_url="rtsp://host/s")],
+            groups={
+                "dog_bark": GroupConfig(confidence_threshold=0.10),
+                "speech": GroupConfig(enabled=False),
+            },
+        )
+        assert cfg.groups is not None
+        assert cfg.groups["dog_bark"].confidence_threshold == 0.10
+        assert cfg.groups["speech"].enabled is False
+
+
+class TestLoadConfigGroups:
+    def test_load_with_groups(self, tmp_path):
+        cfg_data = {
+            **MINIMAL_CONFIG,
+            "groups": {
+                "dog_bark": {"confidence_threshold": 0.10},
+                "speech": {"enabled": False},
+                "wind": {"enabled": True, "confidence_threshold": 0.40},
+            },
+        }
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        cfg = load_config(str(cfg_file))
+        assert cfg.groups is not None
+        assert len(cfg.groups) == 3
+        assert cfg.groups["dog_bark"].confidence_threshold == 0.10
+        assert cfg.groups["speech"].enabled is False
+        assert cfg.groups["wind"].confidence_threshold == 0.40
+
+    def test_load_without_groups(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
+
+        cfg = load_config(str(cfg_file))
+        assert cfg.groups is None
+
+    def test_invalid_group_name_raises(self, tmp_path):
+        cfg_data = {
+            **MINIMAL_CONFIG,
+            "groups": {
+                "totally_fake_group": {"confidence_threshold": 0.50},
+            },
+        }
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        with pytest.raises(ValueError, match="Unknown group in config: 'totally_fake_group'"):
+            load_config(str(cfg_file))
