@@ -544,6 +544,7 @@ class CameraStream:
                         audio,
                         classifications,
                         self._camera.name,
+                        self._disabled_groups,
                     )
                     suppressed = list(self._clap_verifier.last_suppressed)
 

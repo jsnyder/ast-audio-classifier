@@ -222,6 +222,7 @@ class CLAPVerifier:
         audio_16k: np.ndarray,
         ast_results: list[ClassificationResult],
         camera_name: str,
+        disabled_groups: set[str] | None = None,
     ) -> list[ClassificationResult]:
         """Verify AST results using CLAP zero-shot classification.
 
@@ -345,6 +346,8 @@ class CLAPVerifier:
 
         # CLAP-only discovery: groups CLAP detects that AST missed
         for group, score in group_scores.items():
+            if disabled_groups and group in disabled_groups:
+                continue
             if group not in ast_groups and score >= self._config.discovery_threshold:
                 clap_label, _ = self._best_clap_label(group, clap_results)
                 # db_level comes from the audio frame, not the classifier

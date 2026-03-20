@@ -334,6 +334,24 @@ class TestCLAPVerifierDiscovery:
         assert len(dog_results) == 1  # Only the original, not duplicated
 
 
+    def test_discovery_skips_disabled_groups(self):
+        """CLAP discovery should not emit results for disabled groups."""
+        verifier = _make_verifier({
+            "a dog barking": 0.72,
+            "a car horn honking": 0.65,  # >= discovery_threshold
+        })
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32),
+            ast_results,
+            "test_cam",
+            disabled_groups={"car_horn"},
+        )
+        groups = {r.group for r in results}
+        assert "dog_bark" in groups
+        assert "car_horn" not in groups
+
+
 class TestCLAPVerifierUnverified:
     def test_moderate_clap_score_is_unverified(self):
         """Score between suppress and confirm thresholds = unverified."""
