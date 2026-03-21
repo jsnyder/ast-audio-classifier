@@ -223,6 +223,7 @@ class CLAPVerifier:
         ast_results: list[ClassificationResult],
         camera_name: str,
         disabled_groups: set[str] | None = None,
+        confused_groups: frozenset[str] | None = None,
     ) -> list[ClassificationResult]:
         """Verify AST results using CLAP zero-shot classification.
 
@@ -261,12 +262,20 @@ class CLAPVerifier:
             clap_score = group_scores.get(group, 0.0)
             clap_label, _ = self._best_clap_label(group, clap_results)
 
+            # Compute effective thresholds (confused groups get stricter)
+            if confused_groups and group in confused_groups:
+                effective_confirm = max(self._config.confirm_threshold, 0.50)
+                effective_suppress = min(self._config.suppress_threshold, 0.10)
+            else:
+                effective_confirm = self._config.confirm_threshold
+                effective_suppress = self._config.suppress_threshold
+
             # Safety override: never suppress critical groups
             if group in self._config.never_suppress:
                 verified_results.append(
                     replace(
                         result,
-                        clap_verified=True if clap_score >= self._config.confirm_threshold else None,
+                        clap_verified=True if clap_score >= effective_confirm else None,
                         clap_score=round(clap_score, 4) if clap_score > 0 else None,
                         clap_label=clap_label or None,
                     )
@@ -282,7 +291,7 @@ class CLAPVerifier:
                     best_alt_score = alt_score
 
             # Check for confirmation (with margin gate)
-            if clap_score >= self._config.confirm_threshold:
+            if clap_score >= effective_confirm:
                 # Margin check: CLAP score must be competitive with best alternative
                 if clap_score >= best_alt_score - self._config.confirm_margin:
                     logger.info(
@@ -312,7 +321,7 @@ class CLAPVerifier:
             # now always trust CLAP's suppression regardless of AST confidence.
 
             if (
-                clap_score < self._config.suppress_threshold
+                clap_score < effective_suppress
                 and best_alt_score >= self._config.override_threshold
             ):
                 logger.info(

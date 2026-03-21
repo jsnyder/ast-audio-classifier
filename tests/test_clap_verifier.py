@@ -677,6 +677,79 @@ class TestNonSafetyBypassBlocked:
         )
 
 
+class TestCLAPConfounderAware:
+    """Tests for confounder-aware CLAP verification with skeptical thresholds."""
+
+    def test_confused_group_requires_higher_confirmation(self):
+        """When a group is confused, confirm_threshold rises to 0.50."""
+        # Score 0.35 would normally confirm (>= 0.30) but should NOT when confused
+        verifier = _make_verifier({"a dog barking": 0.35})
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32),
+            ast_results,
+            "test_cam",
+            confused_groups=frozenset({"dog_bark"}),
+        )
+        assert len(results) == 1
+        assert results[0].clap_verified is False  # unverified, not confirmed
+
+    def test_confused_group_confirmed_at_high_score(self):
+        """Confused groups can still be confirmed if CLAP score is very high."""
+        verifier = _make_verifier({"a dog barking": 0.55})
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32),
+            ast_results,
+            "test_cam",
+            confused_groups=frozenset({"dog_bark"}),
+        )
+        assert len(results) == 1
+        assert results[0].clap_verified is True
+
+    def test_confused_group_suppressed_more_easily(self):
+        """Confused groups have lower suppress_threshold (0.10 vs 0.15)."""
+        verifier = _make_verifier({
+            "a dog barking": 0.08,  # below confused suppress_threshold 0.10
+            "a vacuum cleaner running": 0.65,  # strong alternative
+        })
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32),
+            ast_results,
+            "test_cam",
+            confused_groups=frozenset({"dog_bark"}),
+        )
+        dog_results = [r for r in results if r.group == "dog_bark"]
+        assert len(dog_results) == 0  # suppressed
+
+    def test_non_confused_group_unaffected(self):
+        """Groups NOT in confused_groups use normal thresholds."""
+        verifier = _make_verifier({"a dog barking": 0.35})
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32),
+            ast_results,
+            "test_cam",
+            confused_groups=frozenset({"music"}),  # dog_bark NOT confused
+        )
+        assert len(results) == 1
+        assert results[0].clap_verified is True  # 0.35 >= 0.30 normal threshold
+
+    def test_no_confused_groups_uses_defaults(self):
+        """When confused_groups is None, normal behavior."""
+        verifier = _make_verifier({"a dog barking": 0.35})
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(
+            np.zeros(16000, dtype=np.float32),
+            ast_results,
+            "test_cam",
+            confused_groups=None,
+        )
+        assert len(results) == 1
+        assert results[0].clap_verified is True
+
+
 class TestSafetyBypassPreserved:
     """Safety-critical groups (never_suppress) should always survive.
 

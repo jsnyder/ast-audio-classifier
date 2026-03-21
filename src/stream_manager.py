@@ -539,12 +539,19 @@ class CameraStream:
                 # CLAP verification (inside semaphore — sequential with AST)
                 suppressed: list = []
                 if classifications and self._clap_verifier is not None:
+                    # Fetch confused groups for confounder-aware CLAP
+                    confused: frozenset[str] | None = None
+                    if self._confounder_monitor:
+                        confused = self._confounder_monitor.get_confused_groups(
+                            self._camera.name
+                        ) or None
                     classifications = await asyncio.to_thread(
                         self._clap_verifier.verify,
                         audio,
                         classifications,
                         self._camera.name,
                         self._disabled_groups,
+                        confused,
                     )
                     suppressed = list(self._clap_verifier.last_suppressed)
 
