@@ -252,11 +252,11 @@ groups:
   vehicle:
     confidence_threshold: 0.65
   hvac_mechanical:
-    confidence_threshold: 0.45
+    confidence_threshold: 0.25
   cat_meow:
-    confidence_threshold: 0.40
+    confidence_threshold: 0.25
   aircraft:
-    confidence_threshold: 0.40
+    confidence_threshold: 0.25
 YAML
 
     # Weather entity for dynamic threshold adjustment (optional)

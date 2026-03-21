@@ -91,11 +91,11 @@ groups:
   vehicle:
     confidence_threshold: 0.65      # 33% accuracy
   hvac_mechanical:
-    confidence_threshold: 0.45      # 44% accuracy
+    confidence_threshold: 0.25      # 44% accuracy — lowered to let AST detect, CLAP verify
   cat_meow:
-    confidence_threshold: 0.40      # 50% — confuses with human voice
+    confidence_threshold: 0.25      # 50% — lowered to let AST detect, CLAP verify
   aircraft:
-    confidence_threshold: 0.40      # 51% accuracy
+    confidence_threshold: 0.25      # 51% — lowered to let AST detect, CLAP verify
 
 # Optional: HA weather entity for dynamic outdoor threshold adjustment
 # When it's raining, rain_storm threshold drops (more sensitive).
