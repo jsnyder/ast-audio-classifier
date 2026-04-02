@@ -99,6 +99,16 @@ YAML
             echo "    scrypted_device_id: \"${CAM_SCRYPTED_ID}\"" >> "$CONFIG_PATH"
         fi
 
+        # Disabled groups (optional per-camera)
+        DG_COUNT=$(jq ".cameras[$i].disabled_groups | length" "$OPTIONS_FILE" 2>/dev/null || echo 0)
+        if [ "$DG_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "    disabled_groups:" >> "$CONFIG_PATH"
+            for j in $(seq 0 $(( DG_COUNT - 1 ))); do
+                DG=$(jq -r ".cameras[$i].disabled_groups[$j]" "$OPTIONS_FILE")
+                echo "      - \"${DG}\"" >> "$CONFIG_PATH"
+            done
+        fi
+
         # Confounders (optional per-camera)
         CONF_COUNT=$(jq ".cameras[$i].confounders | length" "$OPTIONS_FILE" 2>/dev/null || echo 0)
         if [ "$CONF_COUNT" -gt 0 ] 2>/dev/null; then
@@ -243,6 +253,10 @@ groups:
     enabled: false
   gunshot_explosion:
     enabled: false
+  mechanical_anomaly:
+    enabled: false
+  speech:
+    confidence_threshold: 0.25
   music:
     confidence_threshold: 0.60
   rain_storm:

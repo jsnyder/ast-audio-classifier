@@ -277,7 +277,7 @@ class TestStartFfmpegHPF:
             cmd = mock_exec.call_args[0]
             assert "-af" in cmd
             af_idx = cmd.index("-af")
-            assert cmd[af_idx + 1] == "highpass=f=120"
+            assert cmd[af_idx + 1] == "highpass=f=120,alimiter=limit=0.95:attack=0.1:release=50"
             # Should be after -vn and before -acodec
             vn_idx = cmd.index("-vn")
             acodec_idx = cmd.index("-acodec")
@@ -297,7 +297,7 @@ class TestStartFfmpegHPF:
 
                 cmd = mock_exec.call_args[0]
                 af_idx = cmd.index("-af")
-                assert cmd[af_idx + 1] == f"highpass=f={freq}"
+                assert cmd[af_idx + 1] == f"highpass=f={freq},alimiter=limit=0.95:attack=0.1:release=50"
 
 
 def _make_pcm_chunk(amplitude: int = 10) -> bytes:

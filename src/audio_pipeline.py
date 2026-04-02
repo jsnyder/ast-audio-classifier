@@ -103,7 +103,7 @@ async def start_ffmpeg(
     ]
 
     if highpass_freq > 0:
-        cmd.extend(["-af", f"highpass=f={highpass_freq}"])
+        cmd.extend(["-af", f"highpass=f={highpass_freq},alimiter=limit=0.95:attack=0.1:release=50"])
 
     cmd.extend([
         "-acodec",
@@ -258,7 +258,11 @@ async def read_audio_clip(
                 process.stdout.read(CHUNK_BYTES), timeout=30.0
             )
         except TimeoutError:
-            logger.warning("ffmpeg stdout read timeout")
+            logger.warning("ffmpeg stdout read timeout (pid=%s), killing process", process.pid)
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
             return None
         if not chunk:
             return None  # Stream ended
