@@ -134,8 +134,15 @@ class CameraStream:
         self._ambient = AmbientMonitor(camera_name=camera.name)
         # Limit concurrent LLM judge tasks to prevent unbounded accumulation
         self._judge_semaphore = asyncio.Semaphore(2)
-        # Current effective URL (may be updated by discovery)
-        self._effective_url: str = camera.rtsp_url
+        # Current effective URL (may be updated by discovery).
+        # Prefer go2rtc proxy from the start if configured — avoids
+        # an initial failed connection + discovery cycle.
+        if camera.go2rtc_stream:
+            self._effective_url: str = (
+                f"rtsp://a889bffc-go2rtc:8554/{camera.go2rtc_stream}"
+            )
+        else:
+            self._effective_url: str = camera.rtsp_url
         # Stuck-state tracking
         self._failure_start: float = 0.0  # monotonic time of first failure in current run
         self._is_stuck = False
@@ -221,10 +228,11 @@ class CameraStream:
     async def _attempt_discovery(self) -> None:
         """Try to discover a fresh RTSP URL via the resolver.
 
-        Resolution chain:
-        1. ScryptedApiResolver (if resolver has .resolve(device_id) and
-           scrypted_device_id is configured) — authoritative, live URL
-        2. go2rtc stable proxy fallback (if go2rtc_stream is configured)
+        Resolution chain (go2rtc-first to avoid creating ephemeral sessions):
+        1. go2rtc stable proxy (if go2rtc_stream is configured) — persistent,
+           multiplexed, doesn't create new Scrypted rebroadcast sessions
+        2. ScryptedApiResolver (if no go2rtc_stream and scrypted_device_id is
+           configured) — creates ephemeral sessions, use sparingly
         3. Revert to original URL
 
         For cameras with go2rtc_stream, discovery never reverts to a direct
@@ -242,9 +250,24 @@ class CameraStream:
 
         resolved = None
 
-        # Step 1: Try ScryptedApiResolver with device ID
-        if self._camera.scrypted_device_id is not None and isinstance(
-            self._resolver, ScryptedApiResolver
+        # Step 1: Prefer go2rtc stable proxy — persistent connection, no
+        # ephemeral sessions created in Scrypted
+        if self._camera.go2rtc_stream:
+            resolved = (
+                f"rtsp://a889bffc-go2rtc:8554/{self._camera.go2rtc_stream}"
+            )
+            logger.info(
+                "[%s] Using go2rtc proxy: %s",
+                self._camera.name,
+                resolved,
+            )
+
+        # Step 2: Fall back to ScryptedApiResolver only for cameras without
+        # go2rtc_stream — each call creates an ephemeral rebroadcast session
+        if (
+            resolved is None
+            and self._camera.scrypted_device_id is not None
+            and isinstance(self._resolver, ScryptedApiResolver)
         ):
             try:
                 resolved = await self._resolver.resolve(
@@ -256,18 +279,6 @@ class CameraStream:
                     self._camera.name,
                     exc_info=True,
                 )
-
-        # Step 2: Fall back to go2rtc stable proxy if camera has a stream name
-        if resolved is None and self._camera.go2rtc_stream:
-            fallback_url = (
-                f"rtsp://a889bffc-go2rtc:8554/{self._camera.go2rtc_stream}"
-            )
-            logger.info(
-                "[%s] Falling back to go2rtc proxy: %s",
-                self._camera.name,
-                fallback_url,
-            )
-            resolved = fallback_url
 
         if resolved is not None:
             safe = _CRED_RE.sub(r"://\1:***@", resolved)
