@@ -49,9 +49,11 @@ _CRED_RE = re.compile(r"://([^:]+):([^@]+)@")
 MAX_BACKOFF = 60  # seconds
 DISCOVERY_THRESHOLD = 3  # consecutive short-lived failures before URL discovery
 STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
-
+DISCOVERY_BACKOFF_FLOOR = 10  # minimum backoff after discovery has failed before
+MAX_DISCOVERY_RESETS = 3  # stop trusting discovery after this many consecutive resets that fail
 
 STUCK_THRESHOLD_SECONDS = 300  # 5 minutes of continuous failure → stuck
+LOG_SUPPRESSION_INTERVAL = 100  # only log every Nth failure after initial burst
 
 
 class StreamState(enum.Enum):
@@ -138,6 +140,9 @@ class CameraStream:
         self._failure_start: float = 0.0  # monotonic time of first failure in current run
         self._is_stuck = False
         self._fresh_discovery = False  # set when discovery just found a new URL
+        # Discovery effectiveness tracking — prevents infinite backoff resets
+        self._discovery_resets: int = 0  # consecutive discovery cycles that didn't help
+        self._total_failures: int = 0  # lifetime failures for log suppression
 
         # Build adaptive threshold closure if enabled
         self._threshold_fn = None
@@ -398,8 +403,10 @@ class CameraStream:
             if stream_duration >= STABLE_STREAM_SECONDS:
                 # Stream was stable — reset failure counter, backoff, and stuck state
                 self._consecutive_failures = 0
+                self._total_failures = 0
                 self._failure_start = 0.0
                 self._backoff = self._camera.reconnect_interval
+                self._discovery_resets = 0
                 if self._is_stuck:
                     self._is_stuck = False
                     self._backoff = self._camera.reconnect_interval
@@ -409,16 +416,26 @@ class CameraStream:
                     await self._clear_stuck_notification()
             else:
                 self._consecutive_failures += 1
+                self._total_failures += 1
                 if self._failure_start == 0.0:
                     self._failure_start = time.monotonic()
-                logger.warning(
-                    "[%s] Stream died after %.1fs (< %ds), failure %d/%d",
-                    self._camera.name,
-                    stream_duration,
-                    STABLE_STREAM_SECONDS,
-                    self._consecutive_failures,
-                    DISCOVERY_THRESHOLD,
-                )
+                # Rate-limit failure logs: always log first few, then every Nth
+                if (self._total_failures <= DISCOVERY_THRESHOLD
+                        or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
+                    logger.warning(
+                        "[%s] Stream died after %.1fs (< %ds), failure %d (total: %d)",
+                        self._camera.name,
+                        stream_duration,
+                        STABLE_STREAM_SECONDS,
+                        self._consecutive_failures,
+                        self._total_failures,
+                    )
+                elif self._total_failures == DISCOVERY_THRESHOLD + 1:
+                    logger.warning(
+                        "[%s] Suppressing repeated failure logs (next at %d)",
+                        self._camera.name,
+                        self._total_failures - (self._total_failures % LOG_SUPPRESSION_INTERVAL) + LOG_SUPPRESSION_INTERVAL,
+                    )
 
             # Trigger URL discovery after repeated short-lived streams,
             # or on every attempt when stuck (Scrypted ephemeral sessions
@@ -429,12 +446,26 @@ class CameraStream:
                 await self._attempt_discovery()
                 if not self._is_stuck:
                     self._consecutive_failures = 0
-                # If discovery found a new URL, try it immediately —
-                # Scrypted creates on-demand rebroadcast sessions that
-                # expire within seconds if nobody connects.
+                # If discovery found a new URL, try it — but only reset
+                # backoff if discovery has been effective recently.
+                # After MAX_DISCOVERY_RESETS consecutive resets where the
+                # stream still dies quickly, stop trusting discovery.
                 if self._effective_url != old_url:
                     self._fresh_discovery = True
-                    self._backoff = 1
+                    self._discovery_resets += 1
+                    if self._discovery_resets <= MAX_DISCOVERY_RESETS:
+                        self._backoff = max(1, DISCOVERY_BACKOFF_FLOOR
+                                            if self._discovery_resets > 1 else 1)
+                    else:
+                        # Discovery keeps finding URLs that don't work —
+                        # stop resetting backoff, let exponential backoff work
+                        logger.info(
+                            "[%s] Discovery reset #%d — URLs keep failing, "
+                            "keeping backoff at %ds",
+                            self._camera.name,
+                            self._discovery_resets,
+                            self._backoff,
+                        )
 
             # Check for stuck state (continuous failure for too long)
             if (
@@ -461,12 +492,16 @@ class CameraStream:
             # Backoff before reconnect
             if not self._is_stuck:
                 self._state = StreamState.BACKOFF
-            logger.info(
-                "[%s] Reconnecting in %ds%s",
-                self._camera.name,
-                self._backoff,
-                " (STUCK)" if self._is_stuck else "",
-            )
+            # Rate-limit reconnect log in stuck/high-failure states
+            if (not self._is_stuck
+                    or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
+                logger.info(
+                    "[%s] Reconnecting in %ds%s (total failures: %d)",
+                    self._camera.name,
+                    self._backoff,
+                    " (STUCK)" if self._is_stuck else "",
+                    self._total_failures,
+                )
             await asyncio.sleep(self._backoff)
             self._backoff = min(self._backoff * 2, MAX_BACKOFF)
 

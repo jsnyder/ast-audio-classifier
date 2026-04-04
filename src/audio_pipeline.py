@@ -103,7 +103,7 @@ async def start_ffmpeg(
     ]
 
     if highpass_freq > 0:
-        cmd.extend(["-af", f"highpass=f={highpass_freq},alimiter=limit=0.95:attack=0.1:release=50"])
+        cmd.extend(["-af", f"highpass=f={highpass_freq},alimiter=limit=0.95:attack=5:release=50"])
 
     cmd.extend([
         "-acodec",
