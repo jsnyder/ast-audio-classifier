@@ -117,11 +117,15 @@ class ASTClassifier:
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        raw_results = self._pipeline(
-            audio,
-            sampling_rate=self._sample_rate,
-            top_k=20,
-        )
+        try:
+            raw_results = self._pipeline(
+                audio,
+                sampling_rate=self._sample_rate,
+                top_k=20,
+            )
+        except Exception:
+            logger.exception("AST inference failed")
+            return []
 
         # raw_results is list of dicts with 'label' and 'score'
         if (

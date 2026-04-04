@@ -80,12 +80,26 @@ class EventConsolidator:
         Uses trigger_time (monotonic) rather than wall-clock time to correctly
         group events even when AST inference is serialized across cameras.
         """
+        # Safety-critical groups bypass dedup — always fire immediately
+        if group in SAFETY_GROUPS:
+            ep = ConsolidatedEpisode(
+                group=group,
+                cameras=[camera_name],
+                max_confidence=confidence,
+                detection_count=1,
+                first_detected=trigger_time,
+                last_detected=trigger_time,
+            )
+            self._episodes.setdefault(group, []).append(ep)
+            self._publish(group, ep)
+            return
+
         episodes = self._episodes.setdefault(group, [])
 
-        # Find an existing episode within the window
+        # Find an existing episode within the window (abs handles out-of-order arrivals)
         matched = None
         for ep in episodes:
-            if trigger_time - ep.last_detected <= self._window:
+            if abs(trigger_time - ep.last_detected) <= self._window:
                 matched = ep
                 break
 

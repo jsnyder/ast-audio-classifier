@@ -123,7 +123,7 @@ llm_judge:
   sample_rate: 0.10
 ```
 
-`api_base` is required when `enabled: true`. Any OpenAI-compatible API endpoint works (OpenRouter, LiteLLM, etc.).
+`api_base` and `api_key` are required when `enabled: true`. Any OpenAI-compatible API endpoint works (OpenRouter, LiteLLM, etc.).
 
 ## Detection Groups
 

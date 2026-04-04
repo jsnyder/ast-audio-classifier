@@ -133,6 +133,9 @@ class LLMJudgeConfig:
         if self.enabled and not self.api_base:
             msg = "llm_judge.api_base must be set when enabled=true"
             raise ValueError(msg)
+        if self.enabled and not self.api_key:
+            msg = "llm_judge.api_key must be set when enabled=true"
+            raise ValueError(msg)
 
 
 @dataclass
@@ -142,6 +145,17 @@ class NoiseStressConfig:
     decay_half_life_seconds: float = 180.0
     saturation_constant: float = 25.0
     indoor_cameras: list[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.decay_half_life_seconds <= 0:
+            msg = f"decay_half_life_seconds must be > 0, got {self.decay_half_life_seconds}"
+            raise ValueError(msg)
+        if self.saturation_constant <= 0:
+            msg = f"saturation_constant must be > 0, got {self.saturation_constant}"
+            raise ValueError(msg)
+        if self.update_interval_seconds <= 0:
+            msg = f"update_interval_seconds must be > 0, got {self.update_interval_seconds}"
+            raise ValueError(msg)
 
 
 @dataclass
@@ -209,6 +223,10 @@ def load_config(path: str) -> AppConfig:
 
     with config_path.open() as f:
         raw = yaml.safe_load(f)
+
+    if raw is None:
+        msg = f"Config file is empty: {path}"
+        raise ValueError(msg)
 
     raw = _walk_and_substitute(raw)
 

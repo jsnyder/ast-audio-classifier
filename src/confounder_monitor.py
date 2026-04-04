@@ -120,8 +120,10 @@ class ConfounderMonitor:
         return self._available
 
     async def start(self) -> None:
-        """Start the background polling task."""
+        """Start the background polling task (idempotent)."""
         if not self._available or not self._entity_ids:
+            return
+        if self._task and not self._task.done():
             return
         # Do one immediate poll before starting the loop
         await self._poll_states()
@@ -136,17 +138,26 @@ class ConfounderMonitor:
 
     async def stop(self) -> None:
         """Stop the background polling task."""
-        if self._task and not self._task.done():
-            self._task.cancel()
+        task = self._task
+        self._task = None
+        if task and not task.done():
+            task.cancel()
             try:
-                await self._task
+                await task
             except asyncio.CancelledError:
                 pass
 
     async def _poll_loop(self) -> None:
-        """Periodically poll entity states."""
+        """Periodically poll entity states on a monotonic deadline."""
+        import time
+
+        interval = self._poll_interval
+        next_deadline = time.monotonic() + interval
         while True:
-            await asyncio.sleep(self._poll_interval)
+            now = time.monotonic()
+            sleep_for = max(0.0, next_deadline - now)
+            await asyncio.sleep(sleep_for)
+            next_deadline = time.monotonic() + interval
             try:
                 await self._poll_states()
             except asyncio.CancelledError:
@@ -158,28 +169,36 @@ class ConfounderMonitor:
         """Fetch current state for all monitored entities from HA API."""
         await asyncio.to_thread(self._poll_states_sync)
 
-    def _poll_states_sync(self) -> None:
-        """Synchronous polling — runs in a thread to avoid blocking the event loop.
-
-        Fetches only the configured confounder entities (one HTTP call each)
-        and atomically replaces the state dict so readers on the event loop
-        always see a consistent snapshot.
-        """
+    def _fetch_entity_state(self, entity_id: str) -> tuple[str, str]:
+        """Fetch a single entity state. Returns (entity_id, state)."""
         import json
         import urllib.request
 
         headers = {"Authorization": f"Bearer {self._supervisor_token}"}
-        new_states: dict[str, str] = {}
+        url = f"http://supervisor/core/api/states/{entity_id}"
+        req = urllib.request.Request(url, headers=headers)
         try:
-            for entity_id in self._entity_ids:
-                url = f"http://supervisor/core/api/states/{entity_id}"
-                req = urllib.request.Request(url, headers=headers)
-                try:
-                    with urllib.request.urlopen(req, timeout=10) as resp:
-                        data = json.loads(resp.read())
-                    new_state = data.get("state", "unavailable")
-                except Exception:
-                    new_state = "unavailable"
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            return entity_id, data.get("state", "unavailable")
+        except Exception:
+            return entity_id, "unavailable"
+
+    def _poll_states_sync(self) -> None:
+        """Synchronous polling — runs in a thread to avoid blocking the event loop.
+
+        Fetches confounder entities concurrently and atomically replaces
+        the state dict so readers on the event loop always see a consistent snapshot.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        try:
+            entities = list(self._entity_ids)
+            with ThreadPoolExecutor(max_workers=min(len(entities), 8)) as pool:
+                results = pool.map(self._fetch_entity_state, entities)
+
+            new_states: dict[str, str] = {}
+            for entity_id, new_state in results:
                 old_state = self._entity_states.get(entity_id)
                 if old_state != new_state:
                     logger.debug(

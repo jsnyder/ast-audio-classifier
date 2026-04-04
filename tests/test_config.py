@@ -491,21 +491,26 @@ class TestLLMJudgeConfigValidation:
         with pytest.raises(ValueError, match="llm_judge.api_base must be set"):
             LLMJudgeConfig(enabled=True, api_base="")
 
-    def test_enabled_with_api_base_passes(self):
-        cfg = LLMJudgeConfig(enabled=True, api_base="https://example.com/v1")
+    def test_enabled_without_api_key_raises(self):
+        """Enabling LLM judge without api_key must raise immediately."""
+        with pytest.raises(ValueError, match="llm_judge.api_key must be set"):
+            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="")
+
+    def test_enabled_with_api_base_and_key_passes(self):
+        cfg = LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="sk-test")
         assert cfg.enabled is True
 
     def test_sample_rate_out_of_range_raises(self):
         with pytest.raises(ValueError, match="sample_rate"):
-            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", sample_rate=1.5)
+            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="sk-test", sample_rate=1.5)
 
     def test_max_clips_zero_raises(self):
         with pytest.raises(ValueError, match="max_clips"):
-            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", max_clips=0)
+            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="sk-test", max_clips=0)
 
     def test_timeout_zero_raises(self):
         with pytest.raises(ValueError, match="timeout_seconds"):
-            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", timeout_seconds=0)
+            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="sk-test", timeout_seconds=0)
 
 
 class TestLoadConfigLLMJudge:
@@ -574,7 +579,7 @@ class TestLoadConfigLLMJudge:
         """LLM judge section with enabled=true and api_base should use other defaults."""
         cfg_data = {
             **MINIMAL_CONFIG,
-            "llm_judge": {"enabled": True, "api_base": "https://litellm.example.com/v1"},
+            "llm_judge": {"enabled": True, "api_base": "https://litellm.example.com/v1", "api_key": "sk-test"},
         }
         cfg_file = tmp_path / "config.yaml"
         cfg_file.write_text(yaml.dump(cfg_data))

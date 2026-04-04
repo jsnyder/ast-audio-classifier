@@ -98,7 +98,9 @@ class WeatherPrior:
             self._condition = WeatherCondition.UNKNOWN
 
     async def start(self) -> None:
-        """Start periodic polling."""
+        """Start periodic polling (idempotent)."""
+        if self._task and not self._task.done():
+            return
         await asyncio.to_thread(self._poll_sync)
         self._task = asyncio.create_task(self._poll_loop(), name="weather-prior")
         logger.info(
@@ -112,9 +114,11 @@ class WeatherPrior:
             await asyncio.to_thread(self._poll_sync)
 
     async def stop(self) -> None:
-        if self._task and not self._task.done():
-            self._task.cancel()
+        task = self._task
+        self._task = None
+        if task and not task.done():
+            task.cancel()
             try:
-                await self._task
+                await task
             except asyncio.CancelledError:
                 pass

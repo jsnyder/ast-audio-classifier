@@ -205,6 +205,9 @@ class NoiseStressScorer:
         """Most recently computed score, or None if never computed."""
         return self._last_score
 
+    # Cap event buffer to prevent unbounded growth between compute() calls
+    _MAX_EVENTS = 1000
+
     def record_event(
         self,
         group: str,
@@ -214,9 +217,10 @@ class NoiseStressScorer:
         num_cameras: int = 1,
     ) -> None:
         """Record a detection event for stress scoring."""
+        now = time.monotonic()
         self._events.append(
             StressEvent(
-                timestamp=time.monotonic(),
+                timestamp=now,
                 group=group,
                 trigger_db=trigger_db,
                 camera=camera,
@@ -224,6 +228,10 @@ class NoiseStressScorer:
                 num_cameras=num_cameras,
             )
         )
+        # Inline prune if buffer is getting large between compute() calls
+        if len(self._events) > self._MAX_EVENTS:
+            cutoff = now - EVENT_MAX_AGE
+            self._events = [e for e in self._events if e.timestamp > cutoff]
 
     def compute(self, ambient_data: dict[str, dict] | None = None) -> dict:
         """Compute the composite noise stress score.
@@ -409,8 +417,10 @@ class NoiseStressScorer:
             if weight < 0:
                 continue
             loudness = self._loudness_factor(event.trigger_db)
+            confidence = max(0.1, min(1.0, event.confidence))
+            camera_factor = CAMERA_FACTOR_BASE + CAMERA_FACTOR_PER_EXTRA * max(0, event.num_cameras - 1)
             age = now - event.timestamp
-            decayed = weight * loudness * (0.5 ** (age / self._half_life))
+            decayed = weight * loudness * confidence * camera_factor * (0.5 ** (age / self._half_life))
             group_stress[event.group] = group_stress.get(event.group, 0.0) + decayed
 
         if not group_stress:

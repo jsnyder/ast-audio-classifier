@@ -308,9 +308,12 @@ Respond ONLY with valid JSON, no markdown formatting."""
 
             # Log each verdict to OpenObserve — match by group name, not position
             results_by_group = {r.group: r for r in results}
+            fallback = results[0] if results else None
             for verdict in verdicts:
                 verdict_group = verdict.get("group", "unknown")
-                result = results_by_group.get(verdict_group, results[0])
+                result = results_by_group.get(verdict_group, fallback)
+                if result is None:
+                    continue
                 log_event(
                     "llm_judge",
                     camera=camera_name,

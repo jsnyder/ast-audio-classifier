@@ -594,7 +594,9 @@ _AUDIOSET_LABELS: list[str] = [
     "Field recording",
 ]
 
-assert len(_AUDIOSET_LABELS) == 527, f"Expected 527 labels, got {len(_AUDIOSET_LABELS)}"
+if len(_AUDIOSET_LABELS) != 527:
+    msg = f"Expected 527 AudioSet labels, got {len(_AUDIOSET_LABELS)}"
+    raise RuntimeError(msg)
 
 
 class AudioSetLabels:
