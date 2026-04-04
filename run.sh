@@ -83,6 +83,7 @@ YAML
         CAM_ADAPT=$(jq -r ".cameras[$i].adaptive_threshold // false" "$OPTIONS_FILE")
         CAM_MARGIN=$(jq -r ".cameras[$i].adaptive_margin_db // 8.0" "$OPTIONS_FILE")
         CAM_SCRYPTED_ID=$(jq -r ".cameras[$i].scrypted_device_id // \"\"" "$OPTIONS_FILE")
+        CAM_GO2RTC=$(jq -r ".cameras[$i].go2rtc_stream // \"\"" "$OPTIONS_FILE")
 
         cat >> "$CONFIG_PATH" <<YAML
   - name: "${CAM_NAME}"
@@ -95,6 +96,9 @@ YAML
     adaptive_threshold: ${CAM_ADAPT}
     adaptive_margin_db: ${CAM_MARGIN}
 YAML
+        if [ -n "$CAM_GO2RTC" ] && [ "$CAM_GO2RTC" != "null" ]; then
+            echo "    go2rtc_stream: \"${CAM_GO2RTC}\"" >> "$CONFIG_PATH"
+        fi
         if [ -n "$CAM_SCRYPTED_ID" ] && [ "$CAM_SCRYPTED_ID" != "null" ]; then
             echo "    scrypted_device_id: \"${CAM_SCRYPTED_ID}\"" >> "$CONFIG_PATH"
         fi
