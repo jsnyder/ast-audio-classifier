@@ -157,7 +157,7 @@ class ConfounderMonitor:
             now = time.monotonic()
             sleep_for = max(0.0, next_deadline - now)
             await asyncio.sleep(sleep_for)
-            next_deadline = time.monotonic() + interval
+            next_deadline += interval
             try:
                 await self._poll_states()
             except asyncio.CancelledError:
@@ -182,6 +182,7 @@ class ConfounderMonitor:
                 data = json.loads(resp.read())
             return entity_id, data.get("state", "unavailable")
         except Exception:
+            logger.debug("Failed to fetch %s", entity_id, exc_info=True)
             return entity_id, "unavailable"
 
     def _poll_states_sync(self) -> None:
@@ -194,6 +195,8 @@ class ConfounderMonitor:
 
         try:
             entities = list(self._entity_ids)
+            if not entities:
+                return
             with ThreadPoolExecutor(max_workers=min(len(entities), 8)) as pool:
                 results = pool.map(self._fetch_entity_state, entities)
 
