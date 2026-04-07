@@ -26,9 +26,7 @@ logger = logging.getLogger(__name__)
 class ScryptedApiResolver:
     """Resolve RTSP URLs by querying the scrypted-camera-api plugin directly.
 
-    This is the preferred resolver — it returns authoritative, live RTSP URLs
-    straight from Scrypted without depending on go2rtc having correct upstream
-    configuration.
+    Returns authoritative, live RTSP URLs straight from Scrypted.
 
     Usage:
         resolver = ScryptedApiResolver("https://192.168.0.107:10443/endpoint/scrypted-camera-api/public")
