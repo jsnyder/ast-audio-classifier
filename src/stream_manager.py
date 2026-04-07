@@ -75,7 +75,6 @@ class CameraStream:
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
         resolver: ScryptedApiResolver | None = None,
-        auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
         groups_config: dict[str, GroupConfig] | None = None,
         weather_prior: object | None = None,
@@ -91,7 +90,6 @@ class CameraStream:
         self._consolidator = consolidator
         self._noise_stress = noise_stress
         self._resolver = resolver
-        self._auto_discovery = auto_discovery
         self._confounder_monitor = confounder_monitor
         self._weather_prior = weather_prior
 
@@ -637,7 +635,6 @@ class StreamManager:
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
         resolver: ScryptedApiResolver | None = None,
-        auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
         groups_config: dict[str, GroupConfig] | None = None,
         weather_prior: object | None = None,
@@ -656,7 +653,6 @@ class StreamManager:
                 consolidator=consolidator,
                 noise_stress=noise_stress,
                 resolver=resolver,
-                auto_discovery=auto_discovery,
                 confounder_monitor=confounder_monitor,
                 groups_config=groups_config,
                 weather_prior=weather_prior,

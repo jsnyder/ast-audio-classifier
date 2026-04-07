@@ -241,12 +241,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         # Optional: Scrypted API resolver for direct RTSP URL discovery
         app.state.resolver = None
-        auto_discovery = False
         if config.scrypted_api_url:
             from .url_resolver import ScryptedApiResolver
 
             app.state.resolver = ScryptedApiResolver(config.scrypted_api_url)
-            auto_discovery = True
             logger.info(
                 "Scrypted API resolver enabled: %s", config.scrypted_api_url
             )
@@ -264,7 +262,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
             noise_stress=app.state.noise_stress,
             confounder_monitor=app.state.confounder_monitor,
             resolver=app.state.resolver,
-            auto_discovery=auto_discovery,
             groups_config=config.groups,
             weather_prior=app.state.weather_prior,
         )

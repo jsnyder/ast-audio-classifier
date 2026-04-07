@@ -523,6 +523,12 @@ class TestCameraStreamResolverParams:
         stream = _make_stream()
         assert stream._consecutive_failures == 0
 
+    def test_no_auto_discovery_param(self):
+        """auto_discovery parameter should no longer exist on CameraStream."""
+        import inspect
+        sig = inspect.signature(CameraStream.__init__)
+        assert "auto_discovery" not in sig.parameters
+
 
 # ---------------------------------------------------------------------------
 # Failure counter logic
