@@ -446,15 +446,17 @@ class CameraStream:
                         self._camera.name,
                         self._total_failures - (self._total_failures % LOG_SUPPRESSION_INTERVAL) + LOG_SUPPRESSION_INTERVAL,
                     )
-                # Always ship structured event (OO can aggregate/alert on these)
-                log_event(
-                    "stream_death",
-                    camera=self._camera.name,
-                    duration=round(stream_duration, 1),
-                    consecutive_failures=self._consecutive_failures,
-                    total_failures=self._total_failures,
-                    url=_CRED_RE.sub(r"://\1:***@", self._effective_url),
-                )
+                # Ship structured event on the same cadence as failure logs
+                if (self._total_failures <= DISCOVERY_THRESHOLD
+                        or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
+                    log_event(
+                        "stream_death",
+                        camera=self._camera.name,
+                        duration=round(stream_duration, 1),
+                        consecutive_failures=self._consecutive_failures,
+                        total_failures=self._total_failures,
+                        url=_CRED_RE.sub(r"://\1:***@", self._effective_url),
+                    )
 
             # Trigger URL discovery after repeated short-lived streams,
             # or on every attempt when stuck (Scrypted ephemeral sessions

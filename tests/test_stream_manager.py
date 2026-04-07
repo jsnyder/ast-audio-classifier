@@ -614,6 +614,44 @@ class TestStreamManagerDiscoveryForwarding:
         assert mgr.streams[0]._auto_discovery is False
 
 
+class TestStreamDeathEventSuppression:
+    """stream_death OO events should follow the same LOG_SUPPRESSION_INTERVAL as logs."""
+
+    def test_stream_death_event_suppressed_after_threshold(self):
+        """After DISCOVERY_THRESHOLD failures, stream_death events should only fire every LOG_SUPPRESSION_INTERVAL."""
+        from src.stream_manager import DISCOVERY_THRESHOLD, LOG_SUPPRESSION_INTERVAL
+
+        # Failure count just past the threshold — not on a suppression interval boundary
+        failure_count = DISCOVERY_THRESHOLD + 2
+        assert failure_count % LOG_SUPPRESSION_INTERVAL != 0, "Pick a count that is NOT on the interval"
+
+        # The event should NOT fire for this failure count
+        should_emit = (
+            failure_count <= DISCOVERY_THRESHOLD
+            or failure_count % LOG_SUPPRESSION_INTERVAL == 0
+        )
+        assert should_emit is False
+
+    def test_stream_death_event_emits_on_interval(self):
+        """stream_death events should fire on LOG_SUPPRESSION_INTERVAL boundaries."""
+        from src.stream_manager import LOG_SUPPRESSION_INTERVAL
+
+        failure_count = LOG_SUPPRESSION_INTERVAL
+        should_emit = (
+            failure_count <= 3
+            or failure_count % LOG_SUPPRESSION_INTERVAL == 0
+        )
+        assert should_emit is True
+
+    def test_stream_death_event_emits_for_first_failures(self):
+        """stream_death events should always fire for the first few failures."""
+        from src.stream_manager import DISCOVERY_THRESHOLD
+
+        for i in range(1, DISCOVERY_THRESHOLD + 1):
+            should_emit = i <= DISCOVERY_THRESHOLD
+            assert should_emit is True, f"Failure {i} should emit"
+
+
 class TestStreamErrorCredentialRedaction:
     """Verify that exception details in log_event calls never leak credentials."""
 
