@@ -10,8 +10,8 @@ DISCONNECTED -> CONNECTING -> STREAMING -> COOLDOWN -> STREAMING
 When a camera has scrypted_device_id configured, the stream manager queries
 the Camera API for fresh rebroadcast URLs on every connection attempt.
 Scrypted assigns new random ports on restart, so URLs must be resolved
-dynamically.  go2rtc_stream is supported as a fallback but the Camera API
-path is preferred as it eliminates the go2rtc intermediary.
+dynamically.  The Camera API is the sole resolution path — go2rtc is no
+longer used as a fallback.
 """
 
 from __future__ import annotations
@@ -199,7 +199,7 @@ class CameraStream:
 
         When scrypted_device_id is set, always queries the Camera API for a
         fresh rebroadcast URL — these change every time Scrypted restarts.
-        Falls back to go2rtc proxy, then the configured rtsp_url.
+        Falls back to the cached/configured rtsp_url if the API is unavailable.
         """
         # Prefer Camera API for cameras with a Scrypted device ID
         if (
@@ -220,12 +220,6 @@ class CameraStream:
                     self._camera.name,
                     exc_info=True,
                 )
-
-        # Fall back to go2rtc proxy if configured
-        if self._camera.go2rtc_stream:
-            fallback = f"rtsp://a889bffc-go2rtc:8554/{self._camera.go2rtc_stream}"
-            self._effective_url = fallback
-            return fallback
 
         return self._effective_url
 
@@ -254,11 +248,10 @@ class CameraStream:
     async def _attempt_discovery(self) -> None:
         """Try to discover a fresh RTSP URL via the resolver.
 
-        Resolution chain (Camera API first for authoritative URLs):
+        Resolution chain:
         1. ScryptedApiResolver (if scrypted_device_id is configured) — returns
            the current prebuffer rebroadcast URL directly from Scrypted
-        2. go2rtc stable proxy (if go2rtc_stream is configured) — fallback
-        3. Revert to original URL
+        2. Revert to original URL and wait for next retry
         """
         if not self._auto_discovery or self._resolver is None:
             return
@@ -287,17 +280,6 @@ class CameraStream:
                     self._camera.name,
                     exc_info=True,
                 )
-
-        # Step 2: Fall back to go2rtc proxy if Camera API failed
-        if resolved is None and self._camera.go2rtc_stream:
-            resolved = (
-                f"rtsp://a889bffc-go2rtc:8554/{self._camera.go2rtc_stream}"
-            )
-            logger.info(
-                "[%s] Camera API unavailable, falling back to go2rtc proxy: %s",
-                self._camera.name,
-                resolved,
-            )
 
         if resolved is not None:
             safe = _CRED_RE.sub(r"://\1:***@", resolved)
@@ -330,7 +312,7 @@ class CameraStream:
                     f"Camera **{self._camera.name}** audio stream has been failing "
                     f"for over {STUCK_THRESHOLD_SECONDS // 60} minutes "
                     f"({self._total_failures} failures). "
-                    f"Check Scrypted/go2rtc — may need a service restart."
+                    f"Check Scrypted — may need a service restart."
                 ),
                 "notification_id": f"ast_stream_stuck_{self._camera.name}",
             }).encode()
