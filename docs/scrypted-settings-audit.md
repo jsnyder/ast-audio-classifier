@@ -38,7 +38,7 @@ Extensions disabled on all applicable cameras on 2026-04-05:
 
 | Extension | Status | Reason |
 |-----------|--------|--------|
-| Rebroadcast Plugin | **ENABLED** | Core — provides RTSP rebroadcast for go2rtc/AST |
+| Rebroadcast Plugin | **ENABLED** | Core — provides RTSP rebroadcast for AST classifier (via Camera API) |
 | WebRTC Plugin | **ENABLED** | UI live view |
 | Snapshot Plugin | **ENABLED** | AN/LLMVision needs snapshots |
 | Adaptive Streaming | **ENABLED** | Core streaming infrastructure |
@@ -90,15 +90,15 @@ Extensions disabled on all applicable cameras on 2026-04-05:
 ### Known / Outstanding
 1. **Scrypted `ERR_SOCKET_DGRAM_NOT_RUNNING`** — Rebroadcast UDP sockets die and don't recover. Root cause of EOF streams. Full Scrypted restart required to fix.
 2. **Scrypted daily crashes** — 1-2x/day since March 28. `StandardOutput=null` in systemd hides crash details. Should change to `StandardOutput=journal`.
-3. **Ephemeral rebroadcast ports** — Scrypted assigns new random ports/tokens on every restart. go2rtc config goes stale. Fixed by switching AST classifier to Camera API direct resolution.
+3. **Ephemeral rebroadcast ports** — Scrypted assigns new random ports/tokens on every restart. Previously caused go2rtc config staleness. Resolved by switching to Camera API direct resolution; go2rtc code fully removed in v0.8.6.
 4. **Living Room prebuffer 60000s restart delay** — Seen in logs but may be a Scrypted log formatting issue (could be 60000ms = 60s displayed oddly).
 5. **OpenObserve alerts needed** — Scrypted logs go to syslog at `192.168.1.63:515` (tag: `scrypted-app`). Should set up alerts for: stream EOF patterns, NVR recording errors, crash/restart events.
 
 ## Architecture Decision: Camera API vs go2rtc
 
 **Previous**: AST Classifier → go2rtc (hardcoded RTSP URLs) → Scrypted Rebroadcast → Camera
-**New**: AST Classifier → Scrypted Rebroadcast (URLs from Camera API) → Camera
+**Current (v0.8.6)**: AST Classifier → Scrypted Rebroadcast (URLs from Camera API) → Camera
 
 go2rtc was added as an intermediary to provide stable URLs, but Scrypted's ephemeral ports made go2rtc's config go stale on every restart. The Camera API (`scrypted-camera-api` plugin) provides fresh rebroadcast URLs that point to the existing prebuffer sessions — no new sessions created, no competing connections.
 
-go2rtc remains available as a fallback if the Camera API is unreachable.
+All go2rtc resolution code (`ScryptedUrlResolver`, `RtspUrl`, `_attempt_discovery()`, `DISCOVERING` state, `auto_discovery` flag, `go2rtc_stream` config) was fully removed in v0.8.6. The Camera API is the sole resolution path.

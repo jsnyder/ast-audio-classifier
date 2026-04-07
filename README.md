@@ -54,10 +54,12 @@ mqtt:
 cameras:
   - name: living_room
     rtsp_url: "rtsp://192.168.1.100:8554/living_room"
+    scrypted_device_id: "865"  # Optional: enables dynamic URL resolution via Camera API
     db_threshold: -35.0
     cooldown_seconds: 10
   - name: backyard
     rtsp_url: "rtsp://192.168.1.100:8554/backyard"
+    scrypted_device_id: "92"
     db_threshold: -30.0
     battery: true
     reconnect_interval: 60
