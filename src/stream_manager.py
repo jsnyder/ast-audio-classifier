@@ -40,7 +40,6 @@ if TYPE_CHECKING:
     from .event_consolidator import EventConsolidator
     from .llm_judge import LLMJudge
     from .noise_stress import NoiseStressScorer
-    from .url_resolver import ScryptedUrlResolver
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +81,7 @@ class CameraStream:
         llm_judge: LLMJudge | None = None,
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
-        resolver: ScryptedApiResolver | ScryptedUrlResolver | None = None,
+        resolver: ScryptedApiResolver | None = None,
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
         groups_config: dict[str, GroupConfig] | None = None,
@@ -724,7 +723,7 @@ class StreamManager:
         llm_judge: LLMJudge | None = None,
         consolidator: EventConsolidator | None = None,
         noise_stress: NoiseStressScorer | None = None,
-        resolver: ScryptedApiResolver | ScryptedUrlResolver | None = None,
+        resolver: ScryptedApiResolver | None = None,
         auto_discovery: bool = False,
         confounder_monitor: ConfounderMonitor | None = None,
         groups_config: dict[str, GroupConfig] | None = None,
