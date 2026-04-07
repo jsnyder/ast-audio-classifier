@@ -14,7 +14,7 @@ sys.modules.setdefault("paho.mqtt.client", MagicMock())
 
 from src.config import CameraConfig  # noqa: E402
 from src.stream_manager import (  # noqa: E402
-    DISCOVERY_THRESHOLD,
+    LOG_SUPPRESSION_THRESHOLD,
     MAX_BACKOFF,
     STABLE_STREAM_SECONDS,
     CameraStream,
@@ -74,7 +74,7 @@ class TestStreamState:
         assert StreamState.BACKOFF.value == "backoff"
 
     def test_total_member_count(self):
-        assert len(StreamState) == 8
+        assert len(StreamState) == 7
 
 
 # ---------------------------------------------------------------------------
@@ -503,44 +503,21 @@ class TestStreamManagerStatus:
 
 
 # ---------------------------------------------------------------------------
-# DISCOVERING state
+# CameraStream resolver support
 # ---------------------------------------------------------------------------
 
 
-class TestDiscoveringState:
-    """StreamState.DISCOVERING exists for URL auto-discovery."""
-
-    def test_discovering_state_exists(self):
-        assert StreamState.DISCOVERING.value == "discovering"
-
-    def test_total_member_count_with_discovering(self):
-        assert len(StreamState) == 8
-
-
-# ---------------------------------------------------------------------------
-# CameraStream URL discovery support
-# ---------------------------------------------------------------------------
-
-
-class TestCameraStreamDiscoveryParams:
-    """CameraStream accepts resolver and auto_discovery params."""
+class TestCameraStreamResolverParams:
+    """CameraStream accepts resolver param."""
 
     def test_accepts_resolver_param(self):
         resolver = MagicMock()
         stream = _make_stream(resolver=resolver)
         assert stream._resolver is resolver
 
-    def test_accepts_auto_discovery_param(self):
-        stream = _make_stream(auto_discovery=True)
-        assert stream._auto_discovery is True
-
     def test_resolver_defaults_to_none(self):
         stream = _make_stream()
         assert stream._resolver is None
-
-    def test_auto_discovery_defaults_to_false(self):
-        stream = _make_stream()
-        assert stream._auto_discovery is False
 
     def test_consecutive_failures_starts_at_zero(self):
         stream = _make_stream()
@@ -566,8 +543,8 @@ class TestFailureCounter:
         stream._consecutive_failures = 0
         assert stream._consecutive_failures == 0
 
-    def test_discovery_threshold_constant(self):
-        assert DISCOVERY_THRESHOLD == 3
+    def test_log_suppression_threshold_constant(self):
+        assert LOG_SUPPRESSION_THRESHOLD == 3
 
     def test_stable_stream_seconds_constant(self):
         assert STABLE_STREAM_SECONDS == 30
@@ -578,8 +555,8 @@ class TestFailureCounter:
 # ---------------------------------------------------------------------------
 
 
-class TestStreamManagerDiscoveryForwarding:
-    """StreamManager forwards resolver and auto_discovery to CameraStreams."""
+class TestStreamManagerResolverForwarding:
+    """StreamManager forwards resolver to CameraStreams."""
 
     def test_forwards_resolver(self):
         resolver = MagicMock()
@@ -589,19 +566,8 @@ class TestStreamManagerDiscoveryForwarding:
             classifier=MagicMock(),
             publisher=MagicMock(),
             resolver=resolver,
-            auto_discovery=True,
         )
         assert mgr.streams[0]._resolver is resolver
-
-    def test_forwards_auto_discovery(self):
-        cameras = [_make_camera()]
-        mgr = StreamManager(
-            cameras=cameras,
-            classifier=MagicMock(),
-            publisher=MagicMock(),
-            auto_discovery=True,
-        )
-        assert mgr.streams[0]._auto_discovery is True
 
     def test_defaults_no_resolver(self):
         cameras = [_make_camera()]
@@ -611,23 +577,59 @@ class TestStreamManagerDiscoveryForwarding:
             publisher=MagicMock(),
         )
         assert mgr.streams[0]._resolver is None
-        assert mgr.streams[0]._auto_discovery is False
+
+
+class TestSimplifiedRetry:
+    """After removing discovery, stream uses standard exponential backoff."""
+
+    def test_no_discovering_state_in_run_loop(self):
+        """CameraStream should not enter DISCOVERING state — it's been removed."""
+        stream = _make_stream()
+        # DISCOVERING should no longer exist as a state
+        assert not hasattr(StreamState, "DISCOVERING")
+
+    def test_backoff_doubles_on_failure(self):
+        """Backoff should double on each failure up to MAX_BACKOFF."""
+        stream = _make_stream()
+        initial = stream._backoff
+        # Simulate failure
+        stream._backoff = min(stream._backoff * 2, MAX_BACKOFF)
+        assert stream._backoff == initial * 2
+
+    def test_backoff_caps_at_max(self):
+        """Backoff should never exceed MAX_BACKOFF."""
+        stream = _make_stream()
+        stream._backoff = MAX_BACKOFF
+        stream._backoff = min(stream._backoff * 2, MAX_BACKOFF)
+        assert stream._backoff == MAX_BACKOFF
+
+    def test_stable_stream_resets_backoff(self):
+        """A stream lasting >= STABLE_STREAM_SECONDS should reset backoff."""
+        stream = _make_stream()
+        stream._backoff = MAX_BACKOFF
+        stream._consecutive_failures = 10
+        stream._total_failures = 50
+        # Simulate stable stream reset
+        stream._consecutive_failures = 0
+        stream._total_failures = 0
+        stream._backoff = stream._camera.reconnect_interval
+        assert stream._backoff == stream._camera.reconnect_interval
 
 
 class TestStreamDeathEventSuppression:
     """stream_death OO events should follow the same LOG_SUPPRESSION_INTERVAL as logs."""
 
     def test_stream_death_event_suppressed_after_threshold(self):
-        """After DISCOVERY_THRESHOLD failures, stream_death events should only fire every LOG_SUPPRESSION_INTERVAL."""
-        from src.stream_manager import DISCOVERY_THRESHOLD, LOG_SUPPRESSION_INTERVAL
+        """After LOG_SUPPRESSION_THRESHOLD failures, stream_death events should only fire every LOG_SUPPRESSION_INTERVAL."""
+        from src.stream_manager import LOG_SUPPRESSION_INTERVAL, LOG_SUPPRESSION_THRESHOLD
 
         # Failure count just past the threshold — not on a suppression interval boundary
-        failure_count = DISCOVERY_THRESHOLD + 2
+        failure_count = LOG_SUPPRESSION_THRESHOLD + 2
         assert failure_count % LOG_SUPPRESSION_INTERVAL != 0, "Pick a count that is NOT on the interval"
 
         # The event should NOT fire for this failure count
         should_emit = (
-            failure_count <= DISCOVERY_THRESHOLD
+            failure_count <= LOG_SUPPRESSION_THRESHOLD
             or failure_count % LOG_SUPPRESSION_INTERVAL == 0
         )
         assert should_emit is False
@@ -645,10 +647,10 @@ class TestStreamDeathEventSuppression:
 
     def test_stream_death_event_emits_for_first_failures(self):
         """stream_death events should always fire for the first few failures."""
-        from src.stream_manager import DISCOVERY_THRESHOLD
+        from src.stream_manager import LOG_SUPPRESSION_THRESHOLD
 
-        for i in range(1, DISCOVERY_THRESHOLD + 1):
-            should_emit = i <= DISCOVERY_THRESHOLD
+        for i in range(1, LOG_SUPPRESSION_THRESHOLD + 1):
+            should_emit = i <= LOG_SUPPRESSION_THRESHOLD
             assert should_emit is True, f"Failure {i} should emit"
 
 

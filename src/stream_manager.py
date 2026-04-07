@@ -1,17 +1,14 @@
-"""Per-camera stream management with reconnect, backoff, and URL discovery.
+"""Per-camera stream management with reconnect and backoff.
 
 Each camera runs as an independent asyncio task with states:
 DISCONNECTED -> CONNECTING -> STREAMING -> COOLDOWN -> STREAMING
                     |                        |
                  ERROR -> BACKOFF -> CONNECTING
-                    |
-              DISCOVERING -> CONNECTING  (when stream repeatedly dies quickly)
 
 When a camera has scrypted_device_id configured, the stream manager queries
 the Camera API for fresh rebroadcast URLs on every connection attempt.
 Scrypted assigns new random ports on restart, so URLs must be resolved
-dynamically.  The Camera API is the sole resolution path — go2rtc is no
-longer used as a fallback.
+dynamically.
 """
 
 from __future__ import annotations
@@ -46,11 +43,8 @@ logger = logging.getLogger(__name__)
 _CRED_RE = re.compile(r"://([^:]+):([^@]+)@")
 
 MAX_BACKOFF = 60  # seconds
-DISCOVERY_THRESHOLD = 3  # consecutive short-lived failures before URL discovery
 STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
-DISCOVERY_BACKOFF_FLOOR = 10  # minimum backoff after discovery has failed before
-MAX_DISCOVERY_RESETS = 3  # stop trusting discovery after this many consecutive resets that fail
-
+LOG_SUPPRESSION_THRESHOLD = 3  # always log first N failures, then suppress
 STUCK_THRESHOLD_SECONDS = 1800  # 30 minutes of continuous failure → stuck
 LOG_SUPPRESSION_INTERVAL = 100  # only log every Nth failure after initial burst
 
@@ -62,7 +56,6 @@ class StreamState(enum.Enum):
     COOLDOWN = "cooldown"
     ERROR = "error"
     BACKOFF = "backoff"
-    DISCOVERING = "discovering"
     STUCK = "stuck"
 
 
@@ -140,9 +133,6 @@ class CameraStream:
         # Stuck-state tracking
         self._failure_start: float = 0.0  # monotonic time of first failure in current run
         self._is_stuck = False
-        self._fresh_discovery = False  # set when discovery just found a new URL
-        # Discovery effectiveness tracking — prevents infinite backoff resets
-        self._discovery_resets: int = 0  # consecutive discovery cycles that didn't help
         self._total_failures: int = 0  # lifetime failures for log suppression
 
         # Build adaptive threshold closure if enabled
@@ -196,11 +186,10 @@ class CameraStream:
     async def _resolve_connect_url(self) -> str:
         """Resolve the best URL to connect to.
 
-        When scrypted_device_id is set, always queries the Camera API for a
-        fresh rebroadcast URL — these change every time Scrypted restarts.
-        Falls back to the cached/configured rtsp_url if the API is unavailable.
+        When scrypted_device_id is set, queries the Camera API for a fresh
+        rebroadcast URL. Falls back to the cached URL, or reverts to the
+        original configured URL if stuck.
         """
-        # Prefer Camera API for cameras with a Scrypted device ID
         if (
             self._camera.scrypted_device_id is not None
             and self._resolver is not None
@@ -215,10 +204,15 @@ class CameraStream:
                     return resolved
             except Exception:
                 logger.debug(
-                    "[%s] Camera API resolve failed, using cached URL",
+                    "[%s] Camera API resolve failed, using fallback URL",
                     self._camera.name,
                     exc_info=True,
                 )
+
+        # If stuck, revert to original URL so next successful API call
+        # doesn't keep retrying a stale cached URL
+        if self._is_stuck:
+            self._effective_url = self._camera.rtsp_url
 
         return self._effective_url
 
@@ -243,55 +237,6 @@ class CameraStream:
                 self._process.kill()
                 await asyncio.wait_for(self._process.wait(), timeout=2.0)
         self._publisher.publish_camera_offline(self._camera.name)
-
-    async def _attempt_discovery(self) -> None:
-        """Try to discover a fresh RTSP URL via the resolver.
-
-        Resolution chain:
-        1. ScryptedApiResolver (if scrypted_device_id is configured) — returns
-           the current prebuffer rebroadcast URL directly from Scrypted
-        2. Revert to original URL and wait for next retry
-        """
-        if not self._auto_discovery or self._resolver is None:
-            return
-
-        self._state = StreamState.DISCOVERING
-        logger.info(
-            "[%s] Attempting URL discovery (current: %s)",
-            self._camera.name,
-            _CRED_RE.sub(r"://\1:***@", self._effective_url),
-        )
-
-        resolved = None
-
-        # Step 1: Camera API — returns current prebuffer rebroadcast URLs
-        if (
-            self._camera.scrypted_device_id is not None
-            and isinstance(self._resolver, ScryptedApiResolver)
-        ):
-            try:
-                resolved = await self._resolver.resolve(
-                    self._camera.scrypted_device_id,
-                )
-            except Exception:
-                logger.debug(
-                    "[%s] Scrypted API discovery failed",
-                    self._camera.name,
-                    exc_info=True,
-                )
-
-        if resolved is not None:
-            safe = _CRED_RE.sub(r"://\1:***@", resolved)
-            logger.info("[%s] Discovered URL: %s", self._camera.name, safe)
-            self._effective_url = resolved
-        else:
-            safe = re.sub(
-                r"://([^:]+):([^@]+)@", r"://\1:***@", self._camera.rtsp_url
-            )
-            logger.info(
-                "[%s] Reverting to original URL: %s", self._camera.name, safe
-            )
-            self._effective_url = self._camera.rtsp_url
 
     async def _send_stuck_notification(self) -> None:
         """Send a HA persistent notification when stream enters stuck state."""
@@ -415,7 +360,6 @@ class CameraStream:
                 self._total_failures = 0
                 self._failure_start = 0.0
                 self._backoff = self._camera.reconnect_interval
-                self._discovery_resets = 0
                 if self._is_stuck:
                     self._is_stuck = False
                     self._backoff = self._camera.reconnect_interval
@@ -429,7 +373,7 @@ class CameraStream:
                 if self._failure_start == 0.0:
                     self._failure_start = time.monotonic()
                 # Rate-limit failure logs: always log first few, then every Nth
-                if (self._total_failures <= DISCOVERY_THRESHOLD
+                if (self._total_failures <= LOG_SUPPRESSION_THRESHOLD
                         or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
                     logger.warning(
                         "[%s] Stream died after %.1fs (< %ds), failure %d (total: %d)",
@@ -439,14 +383,14 @@ class CameraStream:
                         self._consecutive_failures,
                         self._total_failures,
                     )
-                elif self._total_failures == DISCOVERY_THRESHOLD + 1:
+                elif self._total_failures == LOG_SUPPRESSION_THRESHOLD + 1:
                     logger.warning(
                         "[%s] Suppressing repeated failure logs (next at %d)",
                         self._camera.name,
                         self._total_failures - (self._total_failures % LOG_SUPPRESSION_INTERVAL) + LOG_SUPPRESSION_INTERVAL,
                     )
                 # Ship structured event on the same cadence as failure logs
-                if (self._total_failures <= DISCOVERY_THRESHOLD
+                if (self._total_failures <= LOG_SUPPRESSION_THRESHOLD
                         or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
                     log_event(
                         "stream_death",
@@ -457,36 +401,6 @@ class CameraStream:
                         url=_CRED_RE.sub(r"://\1:***@", self._effective_url),
                     )
 
-            # Trigger URL discovery after repeated short-lived streams,
-            # or on every attempt when stuck (Scrypted ephemeral sessions
-            # require fresh URLs right before each connection).
-            self._fresh_discovery = False
-            if self._consecutive_failures >= DISCOVERY_THRESHOLD or self._is_stuck:
-                old_url = self._effective_url
-                await self._attempt_discovery()
-                if not self._is_stuck:
-                    self._consecutive_failures = 0
-                # If discovery found a new URL, try it — but only reset
-                # backoff if discovery has been effective recently.
-                # After MAX_DISCOVERY_RESETS consecutive resets where the
-                # stream still dies quickly, stop trusting discovery.
-                if self._effective_url != old_url:
-                    self._fresh_discovery = True
-                    self._discovery_resets += 1
-                    if self._discovery_resets <= MAX_DISCOVERY_RESETS:
-                        self._backoff = max(1, DISCOVERY_BACKOFF_FLOOR
-                                            if self._discovery_resets > 1 else 1)
-                    else:
-                        # Discovery keeps finding URLs that don't work —
-                        # stop resetting backoff, let exponential backoff work
-                        logger.info(
-                            "[%s] Discovery reset #%d — URLs keep failing, "
-                            "keeping backoff at %ds",
-                            self._camera.name,
-                            self._discovery_resets,
-                            self._backoff,
-                        )
-
             # Check for stuck state (continuous failure for too long)
             if (
                 self._failure_start > 0
@@ -495,8 +409,7 @@ class CameraStream:
             ):
                 self._is_stuck = True
                 self._state = StreamState.STUCK
-                if not self._fresh_discovery:
-                    self._backoff = MAX_BACKOFF
+                self._backoff = MAX_BACKOFF
                 logger.error(
                     "[%s] Stream STUCK — failing for %.0fs",
                     self._camera.name,
