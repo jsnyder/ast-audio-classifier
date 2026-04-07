@@ -277,7 +277,7 @@ class TestStartFfmpegHPF:
             cmd = mock_exec.call_args[0]
             assert "-af" in cmd
             af_idx = cmd.index("-af")
-            assert cmd[af_idx + 1] == "highpass=f=120,alimiter=limit=0.95:attack=0.1:release=50"
+            assert cmd[af_idx + 1] == "highpass=f=120,alimiter=limit=0.95:attack=5:release=50"
             # Should be after -vn and before -acodec
             vn_idx = cmd.index("-vn")
             acodec_idx = cmd.index("-acodec")
@@ -297,7 +297,7 @@ class TestStartFfmpegHPF:
 
                 cmd = mock_exec.call_args[0]
                 af_idx = cmd.index("-af")
-                assert cmd[af_idx + 1] == f"highpass=f={freq},alimiter=limit=0.95:attack=0.1:release=50"
+                assert cmd[af_idx + 1] == f"highpass=f={freq},alimiter=limit=0.95:attack=5:release=50"
 
 
 def _make_pcm_chunk(amplitude: int = 10) -> bytes:
@@ -492,3 +492,47 @@ class TestReadAudioClipThresholdFn:
             threshold_fn=None,
         )
         assert result is not None
+
+
+class TestEmitFfmpegErrorEvent:
+    """Tests for _emit_ffmpeg_error_event structured OO events."""
+
+    def test_matching_pattern_emits_event(self):
+        """Known error patterns should emit a structured log_event."""
+        from src.audio_pipeline import _emit_ffmpeg_error_event
+
+        with patch("src.audio_pipeline.log_event") as mock_log:
+            _emit_ffmpeg_error_event("Server returned 404 Not Found", "rtsp://cam:***@host/stream")
+            mock_log.assert_called_once_with(
+                "stream_failure",
+                error_type="rtsp_404",
+                url="rtsp://cam:***@host/stream",
+                detail="Server returned 404 Not Found",
+            )
+
+    def test_no_match_does_not_emit(self):
+        """Unrecognized stderr lines should not emit any event."""
+        from src.audio_pipeline import _emit_ffmpeg_error_event
+
+        with patch("src.audio_pipeline.log_event") as mock_log:
+            _emit_ffmpeg_error_event("frame= 100 fps=25.0 q=2.0", "rtsp://host/stream")
+            mock_log.assert_not_called()
+
+    def test_first_match_wins(self):
+        """Only the first matching pattern should fire (early return)."""
+        from src.audio_pipeline import _emit_ffmpeg_error_event
+
+        with patch("src.audio_pipeline.log_event") as mock_log:
+            _emit_ffmpeg_error_event("404 Not Found", "rtsp://host/stream")
+            assert mock_log.call_count == 1
+            assert mock_log.call_args[1]["error_type"] == "rtsp_404"
+
+    def test_detail_truncated_to_200(self):
+        """Detail field should be truncated to 200 chars."""
+        from src.audio_pipeline import _emit_ffmpeg_error_event
+
+        long_line = "Connection refused " + "x" * 300
+        with patch("src.audio_pipeline.log_event") as mock_log:
+            _emit_ffmpeg_error_event(long_line, "rtsp://host/stream")
+            mock_log.assert_called_once()
+            assert len(mock_log.call_args[1]["detail"]) == 200

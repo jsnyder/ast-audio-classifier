@@ -52,7 +52,7 @@ STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
 DISCOVERY_BACKOFF_FLOOR = 10  # minimum backoff after discovery has failed before
 MAX_DISCOVERY_RESETS = 3  # stop trusting discovery after this many consecutive resets that fail
 
-STUCK_THRESHOLD_SECONDS = 300  # 5 minutes of continuous failure → stuck
+STUCK_THRESHOLD_SECONDS = 1800  # 30 minutes of continuous failure → stuck
 LOG_SUPPRESSION_INTERVAL = 100  # only log every Nth failure after initial burst
 
 
@@ -328,8 +328,9 @@ class CameraStream:
                 "title": f"AST Audio: {self._camera.name} stream stuck",
                 "message": (
                     f"Camera **{self._camera.name}** audio stream has been failing "
-                    f"for over {STUCK_THRESHOLD_SECONDS // 60} minutes. "
-                    f"Check Scrypted/RTSP source."
+                    f"for over {STUCK_THRESHOLD_SECONDS // 60} minutes "
+                    f"({self._total_failures} failures). "
+                    f"Check Scrypted/go2rtc — may need a service restart."
                 ),
                 "notification_id": f"ast_stream_stuck_{self._camera.name}",
             }).encode()
@@ -402,9 +403,15 @@ class CameraStream:
 
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 self._state = StreamState.ERROR
-                log_event("stream_error", camera=self._camera.name)
+                log_event(
+                    "stream_error",
+                    camera=self._camera.name,
+                    error_type=type(exc).__name__,
+                    detail=_CRED_RE.sub(r"://\1:***@", str(exc))[:200],
+                    url=_CRED_RE.sub(r"://\1:***@", self._effective_url),
+                )
                 logger.exception("[%s] Stream error", self._camera.name)
             finally:
                 if self._process:
@@ -457,6 +464,15 @@ class CameraStream:
                         self._camera.name,
                         self._total_failures - (self._total_failures % LOG_SUPPRESSION_INTERVAL) + LOG_SUPPRESSION_INTERVAL,
                     )
+                # Always ship structured event (OO can aggregate/alert on these)
+                log_event(
+                    "stream_death",
+                    camera=self._camera.name,
+                    duration=round(stream_duration, 1),
+                    consecutive_failures=self._consecutive_failures,
+                    total_failures=self._total_failures,
+                    url=_CRED_RE.sub(r"://\1:***@", self._effective_url),
+                )
 
             # Trigger URL discovery after repeated short-lived streams,
             # or on every attempt when stuck (Scrypted ephemeral sessions
@@ -507,6 +523,8 @@ class CameraStream:
                     "stream_stuck",
                     camera=self._camera.name,
                     failure_duration=round(time.monotonic() - self._failure_start, 1),
+                    total_failures=self._total_failures,
+                    url=_CRED_RE.sub(r"://\1:***@", self._effective_url),
                 )
                 await self._send_stuck_notification()
 

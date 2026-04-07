@@ -25,6 +25,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from .openobserve import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -137,11 +139,14 @@ class ScryptedApiResolver:
         except HTTPError as e:
             if e.code == 404:
                 logger.debug("Scrypted API: device not found (404) for %s", url)
+                log_event("resolver_failure", error_type="scrypted_404", url=url, http_status=404)
             else:
                 logger.warning("Scrypted API returned HTTP %d for %s", e.code, url)
+                log_event("resolver_failure", error_type=f"scrypted_{e.code}", url=url, http_status=e.code)
             return None
-        except (URLError, OSError, TimeoutError):
+        except (URLError, OSError, TimeoutError) as e:
             logger.debug("Scrypted API unreachable: %s", url, exc_info=True)
+            log_event("resolver_failure", error_type="scrypted_unreachable", url=url, detail=str(e)[:200])
             return None
         return json.loads(body)
 

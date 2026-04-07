@@ -15,7 +15,33 @@ from collections.abc import Callable
 
 import numpy as np
 
+from .openobserve import log_event
+
 logger = logging.getLogger(__name__)
+
+# Patterns for classifying ffmpeg stderr errors into structured event types
+_FFMPEG_ERROR_PATTERNS: list[tuple[str, str]] = [
+    ("404 Not Found", "rtsp_404"),
+    ("Connection timed out", "connection_timeout"),
+    ("Connection refused", "connection_refused"),
+    ("Server returned 4", "http_4xx"),
+    ("Server returned 5", "http_5xx"),
+    ("No route to host", "no_route"),
+    ("Network is unreachable", "network_unreachable"),
+]
+
+
+def _emit_ffmpeg_error_event(text: str, safe_url: str) -> None:
+    """Parse ffmpeg stderr line and emit a structured failure event to OO."""
+    for pattern, error_type in _FFMPEG_ERROR_PATTERNS:
+        if pattern in text:
+            log_event(
+                "stream_failure",
+                error_type=error_type,
+                url=safe_url,
+                detail=text[:200],
+            )
+            return
 
 CHUNK_SAMPLES = 1600  # 100ms at 16kHz
 SAMPLE_RATE = 16000
@@ -144,6 +170,8 @@ async def start_ffmpeg(
                 # Redact RTSP credentials from ffmpeg error output
                 text = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", text)
                 logger.warning("ffmpeg[%s]: %s", process.pid, text)
+                # Ship structured failure events for queryable error patterns
+                _emit_ffmpeg_error_event(text, safe_url)
         except Exception:
             logger.debug("ffmpeg stderr drain ended for pid=%s", process.pid)
 

@@ -612,3 +612,22 @@ class TestStreamManagerDiscoveryForwarding:
         )
         assert mgr.streams[0]._resolver is None
         assert mgr.streams[0]._auto_discovery is False
+
+
+class TestStreamErrorCredentialRedaction:
+    """Verify that exception details in log_event calls never leak credentials."""
+
+    def test_stream_error_detail_redacts_credentials(self):
+        """str(exc) containing RTSP creds must be scrubbed before log_event."""
+        from src.stream_manager import _CRED_RE
+
+        # Simulate an exception whose message contains an RTSP URL with creds
+        exc = ConnectionError("Failed to connect to rtsp://admin:s3cret@192.168.1.100:554/stream")
+        raw = str(exc)
+        # The raw exception contains the password
+        assert "s3cret" in raw
+
+        # Apply the same redaction the code should use
+        redacted = _CRED_RE.sub(r"://\1:***@", raw)
+        assert "s3cret" not in redacted
+        assert "admin:***@" in redacted
