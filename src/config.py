@@ -52,7 +52,6 @@ class CameraConfig:
     highpass_freq: int = 0
     adaptive_threshold: bool = False
     adaptive_margin_db: float = 8.0
-    go2rtc_stream: str | None = None
     scrypted_device_id: str | None = None
     confounders: list[ConfounderConfig] | None = None
     disabled_groups: list[str] | None = None

@@ -529,6 +529,12 @@ class TestCameraStreamResolverParams:
         sig = inspect.signature(CameraStream.__init__)
         assert "auto_discovery" not in sig.parameters
 
+    def test_no_go2rtc_stream_in_camera_config(self):
+        """go2rtc_stream field should no longer exist on CameraConfig."""
+        import dataclasses
+        field_names = {f.name for f in dataclasses.fields(CameraConfig)}
+        assert "go2rtc_stream" not in field_names
+
 
 # ---------------------------------------------------------------------------
 # Failure counter logic
