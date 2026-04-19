@@ -19,6 +19,7 @@ tests/e2e/samples/
 task_plan.md
 findings.md
 progress.md
+docs/camera-reliability-tracker.md
 .entity-issue-baseline.json
 .entity-issue-history.json
 uv.lock
