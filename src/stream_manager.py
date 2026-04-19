@@ -47,6 +47,8 @@ STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
 LOG_SUPPRESSION_THRESHOLD = 3  # always log first N failures, then suppress
 STUCK_THRESHOLD_SECONDS = 1800  # 30 minutes of continuous failure → stuck
 LOG_SUPPRESSION_INTERVAL = 100  # only log every Nth failure after initial burst
+FAST_RECONNECT_THRESHOLD = 5   # after this many consecutive short streams, switch to fast reconnect
+FAST_RECONNECT_INTERVAL = 1.0  # seconds between reconnects in fast-reconnect mode
 
 
 class StreamState(enum.Enum):
@@ -187,9 +189,14 @@ class CameraStream:
         When scrypted_device_id is set, queries the Camera API for a fresh
         rebroadcast URL. Falls back to the cached URL, or reverts to the
         original configured URL if stuck.
+
+        In fast-reconnect mode (stream consistently flapping), skips the Camera
+        API call entirely to avoid adding the resolver timeout on every retry.
         """
+        in_fast_reconnect = self._consecutive_failures >= FAST_RECONNECT_THRESHOLD
         if (
-            self._camera.scrypted_device_id is not None
+            not in_fast_reconnect
+            and self._camera.scrypted_device_id is not None
             and self._resolver is not None
             and isinstance(self._resolver, ScryptedApiResolver)
         ):
@@ -422,21 +429,42 @@ class CameraStream:
                 )
                 await self._send_stuck_notification()
 
-            # Backoff before reconnect
-            if not self._is_stuck:
+            # Backoff before reconnect.
+            # Fast-reconnect mode: when a stream has been consistently short-lived
+            # (e.g. Scrypted prebuffer-mixin flapping), skip exponential backoff and
+            # reconnect quickly so we stay attached through the ~2s drop/reconnect window.
+            if not self._is_stuck and self._consecutive_failures >= FAST_RECONNECT_THRESHOLD:
                 self._state = StreamState.BACKOFF
-            # Rate-limit reconnect log in stuck/high-failure states
-            if (not self._is_stuck
-                    or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
-                logger.info(
-                    "[%s] Reconnecting in %ds%s (total failures: %d)",
-                    self._camera.name,
-                    self._backoff,
-                    " (STUCK)" if self._is_stuck else "",
-                    self._total_failures,
-                )
-            await asyncio.sleep(self._backoff)
-            self._backoff = min(self._backoff * 2, MAX_BACKOFF)
+                if self._consecutive_failures == FAST_RECONNECT_THRESHOLD:
+                    logger.warning(
+                        "[%s] Stream consistently short-lived (%d consecutive), "
+                        "switching to fast reconnect (%.1fs interval)",
+                        self._camera.name,
+                        self._consecutive_failures,
+                        FAST_RECONNECT_INTERVAL,
+                    )
+                    log_event(
+                        "fast_reconnect_entered",
+                        camera=self._camera.name,
+                        consecutive_failures=self._consecutive_failures,
+                    )
+                await asyncio.sleep(FAST_RECONNECT_INTERVAL)
+                # Don't grow backoff in fast-reconnect mode
+            else:
+                if not self._is_stuck:
+                    self._state = StreamState.BACKOFF
+                # Rate-limit reconnect log in stuck/high-failure states
+                if (not self._is_stuck
+                        or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
+                    logger.info(
+                        "[%s] Reconnecting in %ds%s (total failures: %d)",
+                        self._camera.name,
+                        self._backoff,
+                        " (STUCK)" if self._is_stuck else "",
+                        self._total_failures,
+                    )
+                await asyncio.sleep(self._backoff)
+                self._backoff = min(self._backoff * 2, MAX_BACKOFF)
 
     async def _run_judge(
         self, audio: object, classifications: list
