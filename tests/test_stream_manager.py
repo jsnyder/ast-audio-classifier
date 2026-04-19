@@ -187,6 +187,60 @@ class TestJudgeSemaphore:
 
 
 # ---------------------------------------------------------------------------
+# Judge task lifecycle (detached tasks must be tracked and cancelled)
+# ---------------------------------------------------------------------------
+
+
+class TestJudgeTaskLifecycle:
+    """Background LLM judge tasks must be tracked and cancelled on stop()."""
+
+    def test_judge_tasks_set_initialized_empty(self):
+        stream = _make_stream()
+        assert hasattr(stream, "_judge_tasks")
+        assert stream._judge_tasks == set()
+
+    def test_stop_cancels_tracked_judge_tasks(self):
+        async def _run():
+            stream = _make_stream()
+            # Simulate a pending judge task
+            async def slow_work():
+                await asyncio.sleep(60)
+
+            task = asyncio.create_task(slow_work(), name="test-judge")
+            stream._judge_tasks.add(task)
+            task.add_done_callback(stream._judge_tasks.discard)
+
+            # Give the loop a tick to start the task
+            await asyncio.sleep(0)
+            assert not task.done()
+
+            await stream.stop()
+
+            assert task.cancelled() or task.done()
+            assert task not in stream._judge_tasks
+
+        asyncio.run(_run())
+
+    def test_completed_judge_task_removes_itself_from_set(self):
+        async def _run():
+            stream = _make_stream()
+
+            async def quick_work():
+                return "done"
+
+            task = asyncio.create_task(quick_work(), name="test-judge")
+            stream._judge_tasks.add(task)
+            task.add_done_callback(stream._judge_tasks.discard)
+
+            await task
+            # Give callback a chance to run
+            await asyncio.sleep(0)
+            assert task not in stream._judge_tasks
+
+        asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
 # Adaptive threshold closure
 # ---------------------------------------------------------------------------
 

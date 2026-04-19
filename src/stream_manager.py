@@ -126,6 +126,8 @@ class CameraStream:
         self._ambient = AmbientMonitor(camera_name=camera.name)
         # Limit concurrent LLM judge tasks to prevent unbounded accumulation
         self._judge_semaphore = asyncio.Semaphore(2)
+        # Track detached judge tasks so stop() can cancel them cleanly
+        self._judge_tasks: set[asyncio.Task] = set()
         # Current effective URL (may be updated by discovery).
         # Start with the configured rtsp_url; the resolver will
         # replace it with a fresh Scrypted rebroadcast URL on first connect.
@@ -234,6 +236,10 @@ class CameraStream:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+        if self._judge_tasks:
+            for task in list(self._judge_tasks):
+                task.cancel()
+            await asyncio.gather(*self._judge_tasks, return_exceptions=True)
         if self._process:
             self._process.terminate()
             try:
@@ -637,10 +643,12 @@ class CameraStream:
                 if self._llm_judge is not None and self._llm_judge.should_sample():
                     all_for_judge = classifications + suppressed
                     if not self._judge_semaphore.locked():
-                        asyncio.create_task(  # noqa: RUF006
+                        judge_task = asyncio.create_task(
                             self._run_judge(audio, all_for_judge),
                             name=f"llm-judge-{self._camera.name}",
                         )
+                        self._judge_tasks.add(judge_task)
+                        judge_task.add_done_callback(self._judge_tasks.discard)
                     else:
                         logger.debug(
                             "[%s] LLM judge backlog full, skipping",
