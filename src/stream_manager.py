@@ -19,6 +19,7 @@ import enum
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from dataclasses import replace
@@ -122,6 +123,11 @@ class CameraStream:
         self._last_event_time: float = 0
         self._inference_count = 0
         self._consecutive_failures = 0
+        # Short streams that actually reached STREAMING (gates fast-reconnect).
+        # Pure connect failures (never reached STREAMING) must not count here,
+        # or we'd enter fast-reconnect against a stale Scrypted rebroadcast URL
+        # and hammer the dead port instead of letting Scrypted rotate it.
+        self._consecutive_short_streams = 0
         self._process: asyncio.subprocess.Process | None = None
         self._task: asyncio.Task | None = None
         self._ambient = AmbientMonitor(camera_name=camera.name)
@@ -189,11 +195,13 @@ class CameraStream:
     def _should_use_resolver(self) -> bool:
         """Whether to hit the Camera API resolver on the next reconnect.
 
-        Below FAST_RECONNECT_THRESHOLD: always resolve (normal operation).
-        At/above threshold: only resolve every FAST_RECONNECT_RESOLVER_INTERVAL
+        Outside fast-reconnect mode: always resolve (normal operation).
+        In fast-reconnect mode: only resolve every FAST_RECONNECT_RESOLVER_INTERVAL
         failures so a stale cached URL can't wedge the loop indefinitely.
+        Fast-reconnect is gated on _consecutive_short_streams (not total failures),
+        so pure connect failures continue to re-resolve every attempt.
         """
-        if self._consecutive_failures < FAST_RECONNECT_THRESHOLD:
+        if self._consecutive_short_streams < FAST_RECONNECT_THRESHOLD:
             return True
         return self._consecutive_failures % FAST_RECONNECT_RESOLVER_INTERVAL == 0
 
@@ -331,7 +339,18 @@ class CameraStream:
     async def _run(self) -> None:
         """Main loop: connect, stream, classify, reconnect on failure."""
         while True:
-            stream_start: float = 0.0  # set only after reaching STREAMING; 0.0 == connect failed
+            stream_start: float = 0.0  # set by on_first_chunk; 0.0 == never reached STREAMING
+
+            def _on_first_chunk() -> None:
+                # ffmpeg produced its first audio chunk — RTSP connection is
+                # actually alive. Promote state and record the true start time.
+                nonlocal stream_start
+                stream_start = time.monotonic()
+                self._state = StreamState.STREAMING
+                self._publisher.publish_camera_online(self._camera.name)
+                log_event("stream_online", camera=self._camera.name)
+                logger.info("[%s] Streaming", self._camera.name)
+
             try:
                 self._state = StreamState.CONNECTING
                 url = await self._resolve_connect_url()
@@ -344,13 +363,8 @@ class CameraStream:
                     url,
                     highpass_freq=self._camera.highpass_freq,
                 )
-                self._state = StreamState.STREAMING
-                stream_start = time.monotonic()
-                self._publisher.publish_camera_online(self._camera.name)
-                log_event("stream_online", camera=self._camera.name)
-                logger.info("[%s] Streaming", self._camera.name)
-
-                await self._stream_loop()
+                # Stay in CONNECTING until first audio chunk arrives.
+                await self._stream_loop(on_first_chunk=_on_first_chunk)
 
             except asyncio.CancelledError:
                 raise
@@ -386,6 +400,7 @@ class CameraStream:
             if stream_duration >= STABLE_STREAM_SECONDS:
                 # Stream was stable — reset failure counter, backoff, and stuck state
                 self._consecutive_failures = 0
+                self._consecutive_short_streams = 0
                 self._total_failures = 0
                 self._failure_start = 0.0
                 self._backoff = self._camera.reconnect_interval
@@ -400,6 +415,11 @@ class CameraStream:
             else:
                 self._consecutive_failures += 1
                 self._total_failures += 1
+                # Only count short streams that actually reached STREAMING —
+                # pure connect failures shouldn't drive fast-reconnect (see
+                # _consecutive_short_streams docstring in __init__).
+                if reached_streaming:
+                    self._consecutive_short_streams += 1
                 if self._failure_start == 0.0:
                     self._failure_start = time.monotonic()
                 # Rate-limit failure logs: always log first few, then every Nth
@@ -468,9 +488,9 @@ class CameraStream:
             # Fast-reconnect mode: when a stream has been consistently short-lived
             # (e.g. Scrypted prebuffer-mixin flapping), skip exponential backoff and
             # reconnect quickly so we stay attached through the ~2s drop/reconnect window.
-            if not self._is_stuck and self._consecutive_failures >= FAST_RECONNECT_THRESHOLD:
+            if not self._is_stuck and self._consecutive_short_streams >= FAST_RECONNECT_THRESHOLD:
                 self._state = StreamState.BACKOFF
-                if self._consecutive_failures == FAST_RECONNECT_THRESHOLD:
+                if self._consecutive_short_streams == FAST_RECONNECT_THRESHOLD:
                     logger.warning(
                         "[%s] Stream consistently short-lived (%d consecutive), "
                         "switching to fast reconnect (%.1fs interval)",
@@ -508,8 +528,13 @@ class CameraStream:
         async with self._judge_semaphore:
             await self._llm_judge.evaluate(audio, classifications, self._camera.name)
 
-    async def _stream_loop(self) -> None:
-        """Read clips from ffmpeg and classify when triggered."""
+    async def _stream_loop(self, on_first_chunk: Callable[[], None] | None = None) -> None:
+        """Read clips from ffmpeg and classify when triggered.
+
+        on_first_chunk fires exactly once when ffmpeg produces its first audio
+        chunk — proof the RTSP connection is actually alive. Callers use this to
+        transition from CONNECTING → STREAMING.
+        """
         while True:
             result = await read_audio_clip(
                 self._process,
@@ -517,7 +542,13 @@ class CameraStream:
                 self._clip_duration,
                 ambient_monitor=self._ambient,
                 threshold_fn=self._threshold_fn,
+                on_first_chunk=on_first_chunk,
             )
+            # Clear the callback after the first clip so we don't re-signal on
+            # subsequent iterations. (read_audio_clip returns per-clip, so each
+            # call starts fresh — without this, we'd fire the callback on the
+            # first chunk of every clip.)
+            on_first_chunk = None
             if result is None:
                 logger.warning("[%s] Stream ended", self._camera.name)
                 return

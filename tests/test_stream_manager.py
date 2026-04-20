@@ -205,18 +205,30 @@ class TestShouldUseResolver:
     def test_resolves_when_no_failures(self):
         stream = _make_stream()
         stream._consecutive_failures = 0
+        stream._consecutive_short_streams = 0
         assert stream._should_use_resolver() is True
 
     def test_resolves_just_below_fast_reconnect_threshold(self):
         from src.stream_manager import FAST_RECONNECT_THRESHOLD
         stream = _make_stream()
         stream._consecutive_failures = FAST_RECONNECT_THRESHOLD - 1
+        stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD - 1
+        assert stream._should_use_resolver() is True
+
+    def test_resolves_when_only_connect_failures(self):
+        """Pure connect failures must always re-resolve — they indicate stale
+        Scrypted URLs, and skipping resolver would wedge us on the dead URL."""
+        from src.stream_manager import FAST_RECONNECT_THRESHOLD
+        stream = _make_stream()
+        stream._consecutive_failures = FAST_RECONNECT_THRESHOLD * 3
+        stream._consecutive_short_streams = 0
         assert stream._should_use_resolver() is True
 
     def test_skips_resolver_at_fast_reconnect_threshold(self):
         from src.stream_manager import FAST_RECONNECT_THRESHOLD
         stream = _make_stream()
         stream._consecutive_failures = FAST_RECONNECT_THRESHOLD
+        stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD
         # Threshold is 5 and refresh interval is 10, so 5 is not a refresh boundary
         assert stream._should_use_resolver() is False
 
@@ -226,6 +238,7 @@ class TestShouldUseResolver:
             FAST_RECONNECT_THRESHOLD,
         )
         stream = _make_stream()
+        stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD
         # sample values that are above threshold but not on the refresh interval
         for n in (
             FAST_RECONNECT_THRESHOLD + 1,
@@ -240,8 +253,9 @@ class TestShouldUseResolver:
             )
 
     def test_refreshes_at_interval_boundary(self):
-        from src.stream_manager import FAST_RECONNECT_RESOLVER_INTERVAL
+        from src.stream_manager import FAST_RECONNECT_RESOLVER_INTERVAL, FAST_RECONNECT_THRESHOLD
         stream = _make_stream()
+        stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD
         for n in (
             FAST_RECONNECT_RESOLVER_INTERVAL,
             FAST_RECONNECT_RESOLVER_INTERVAL * 2,

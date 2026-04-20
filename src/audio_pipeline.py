@@ -254,6 +254,7 @@ async def read_audio_clip(
     *,
     ambient_monitor: AmbientMonitor | None = None,
     threshold_fn: Callable[[], float] | None = None,
+    on_first_chunk: Callable[[], None] | None = None,
 ) -> tuple[np.ndarray, float, float] | None:
     """Read PCM chunks from ffmpeg, gate on dB level, capture a clip.
 
@@ -264,6 +265,10 @@ async def read_audio_clip(
     Args:
         threshold_fn: Optional callable returning dynamic dB threshold each iteration.
             When provided, overrides db_threshold on each chunk.
+        on_first_chunk: Optional callback invoked exactly once on the first
+            successfully read chunk — proof that the RTSP connection is alive
+            and ffmpeg is producing audio. Use this to transition stream state
+            from CONNECTING → STREAMING.
 
     Returns:
         (audio_float32, trigger_db, trigger_time) tuple, or None if stream ended.
@@ -276,6 +281,7 @@ async def read_audio_clip(
     trigger_db = 0.0
     trigger_time = 0.0
     samples_recorded = 0
+    first_chunk_signaled = False
 
     if process.stdout is None:
         return None
@@ -294,6 +300,10 @@ async def read_audio_clip(
             return None
         except asyncio.IncompleteReadError:
             return None  # Stream ended (EOF with partial chunk)
+
+        if not first_chunk_signaled and on_first_chunk is not None:
+            first_chunk_signaled = True
+            on_first_chunk()
 
         # Decode PCM chunk
         pcm = np.frombuffer(chunk, dtype=np.int16)
