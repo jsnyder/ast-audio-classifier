@@ -49,6 +49,7 @@ STUCK_THRESHOLD_SECONDS = 1800  # 30 minutes of continuous failure → stuck
 LOG_SUPPRESSION_INTERVAL = 100  # only log every Nth failure after initial burst
 FAST_RECONNECT_THRESHOLD = 5   # after this many consecutive short streams, switch to fast reconnect
 FAST_RECONNECT_INTERVAL = 1.0  # seconds between reconnects in fast-reconnect mode
+FAST_RECONNECT_RESOLVER_INTERVAL = 10  # re-resolve URL every N failures in fast-reconnect mode
 
 
 class StreamState(enum.Enum):
@@ -185,6 +186,17 @@ class CameraStream:
             )
         return info
 
+    def _should_use_resolver(self) -> bool:
+        """Whether to hit the Camera API resolver on the next reconnect.
+
+        Below FAST_RECONNECT_THRESHOLD: always resolve (normal operation).
+        At/above threshold: only resolve every FAST_RECONNECT_RESOLVER_INTERVAL
+        failures so a stale cached URL can't wedge the loop indefinitely.
+        """
+        if self._consecutive_failures < FAST_RECONNECT_THRESHOLD:
+            return True
+        return self._consecutive_failures % FAST_RECONNECT_RESOLVER_INTERVAL == 0
+
     async def _resolve_connect_url(self) -> str:
         """Resolve the best URL to connect to.
 
@@ -193,11 +205,12 @@ class CameraStream:
         original configured URL if stuck.
 
         In fast-reconnect mode (stream consistently flapping), skips the Camera
-        API call entirely to avoid adding the resolver timeout on every retry.
+        API call on most retries to avoid adding the resolver timeout per
+        attempt, but still re-resolves every FAST_RECONNECT_RESOLVER_INTERVAL
+        failures so a stale cached URL doesn't wedge the loop forever.
         """
-        in_fast_reconnect = self._consecutive_failures >= FAST_RECONNECT_THRESHOLD
         if (
-            not in_fast_reconnect
+            self._should_use_resolver()
             and self._camera.scrypted_device_id is not None
             and self._resolver is not None
             and isinstance(self._resolver, ScryptedApiResolver)
