@@ -331,7 +331,7 @@ class CameraStream:
     async def _run(self) -> None:
         """Main loop: connect, stream, classify, reconnect on failure."""
         while True:
-            stream_start = time.monotonic()
+            stream_start: float = 0.0  # set only after reaching STREAMING; 0.0 == connect failed
             try:
                 self._state = StreamState.CONNECTING
                 url = await self._resolve_connect_url()
@@ -345,6 +345,7 @@ class CameraStream:
                     highpass_freq=self._camera.highpass_freq,
                 )
                 self._state = StreamState.STREAMING
+                stream_start = time.monotonic()
                 self._publisher.publish_camera_online(self._camera.name)
                 log_event("stream_online", camera=self._camera.name)
                 logger.info("[%s] Streaming", self._camera.name)
@@ -376,8 +377,12 @@ class CameraStream:
                     self._process = None
                 self._publisher.publish_camera_offline(self._camera.name)
 
-            # Track stream stability for discovery decisions
-            stream_duration = time.monotonic() - stream_start
+            # Track stream stability for discovery decisions.
+            # stream_start == 0.0 means we never reached STREAMING (connect failure);
+            # reporting a non-zero duration in that case pollutes the stream-death metric
+            # with the resolver/ffmpeg-startup timeout instead of actual stream lifetime.
+            reached_streaming = stream_start > 0.0
+            stream_duration = (time.monotonic() - stream_start) if reached_streaming else 0.0
             if stream_duration >= STABLE_STREAM_SECONDS:
                 # Stream was stable — reset failure counter, backoff, and stuck state
                 self._consecutive_failures = 0
@@ -400,25 +405,35 @@ class CameraStream:
                 # Rate-limit failure logs: always log first few, then every Nth
                 if (self._total_failures <= LOG_SUPPRESSION_THRESHOLD
                         or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
-                    logger.warning(
-                        "[%s] Stream died after %.1fs (< %ds), failure %d (total: %d)",
-                        self._camera.name,
-                        stream_duration,
-                        STABLE_STREAM_SECONDS,
-                        self._consecutive_failures,
-                        self._total_failures,
-                    )
+                    if reached_streaming:
+                        logger.warning(
+                            "[%s] Stream died after %.1fs (< %ds), failure %d (total: %d)",
+                            self._camera.name,
+                            stream_duration,
+                            STABLE_STREAM_SECONDS,
+                            self._consecutive_failures,
+                            self._total_failures,
+                        )
+                    else:
+                        logger.warning(
+                            "[%s] Connect failed (never reached STREAMING), failure %d (total: %d)",
+                            self._camera.name,
+                            self._consecutive_failures,
+                            self._total_failures,
+                        )
                 elif self._total_failures == LOG_SUPPRESSION_THRESHOLD + 1:
                     logger.warning(
                         "[%s] Suppressing repeated failure logs (next at %d)",
                         self._camera.name,
                         self._total_failures - (self._total_failures % LOG_SUPPRESSION_INTERVAL) + LOG_SUPPRESSION_INTERVAL,
                     )
-                # Ship structured event on the same cadence as failure logs
+                # Ship structured event on the same cadence as failure logs.
+                # Differentiate real stream deaths (reached STREAMING) from connect
+                # failures so we can diagnose resolver/ffmpeg-startup issues separately.
                 if (self._total_failures <= LOG_SUPPRESSION_THRESHOLD
                         or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
                     log_event(
-                        "stream_death",
+                        "stream_death" if reached_streaming else "stream_connect_failed",
                         camera=self._camera.name,
                         duration=round(stream_duration, 1),
                         consecutive_failures=self._consecutive_failures,
