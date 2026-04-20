@@ -122,7 +122,7 @@ async def start_ffmpeg(
         "-allowed_media_types",
         "audio",
         "-timeout",
-        "10000000",  # 10s RTSP timeout (microseconds)
+        "30000000",  # 30s RTSP read timeout (microseconds) — tolerate transient Scrypted rebroadcast pauses
         "-i",
         rtsp_url,
         "-vn",
