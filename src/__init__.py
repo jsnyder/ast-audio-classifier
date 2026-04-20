@@ -1,3 +1,3 @@
 """AST Audio Classifier - Docker sidecar for Home Assistant audio event detection."""
 
-__version__ = "0.8.8"
+__version__ = "0.8.9"
