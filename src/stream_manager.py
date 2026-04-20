@@ -389,7 +389,8 @@ class CameraStream:
                     self._backoff = self._camera.reconnect_interval
                     logger.info("[%s] Stream recovered from stuck state", self._camera.name)
                     log_event("stream_recovered", camera=self._camera.name)
-                    self._publisher.publish_camera_online(self._camera.name)
+                    # Don't re-publish camera_online here — stream just ended and
+                    # ffmpeg is dead. The next successful connect will publish.
                     await self._clear_stuck_notification()
             else:
                 self._consecutive_failures += 1

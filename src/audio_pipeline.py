@@ -283,7 +283,7 @@ async def read_audio_clip(
     while True:
         try:
             chunk = await asyncio.wait_for(
-                process.stdout.read(CHUNK_BYTES), timeout=30.0
+                process.stdout.readexactly(CHUNK_BYTES), timeout=30.0
             )
         except TimeoutError:
             logger.warning("ffmpeg stdout read timeout (pid=%s), killing process", process.pid)
@@ -292,8 +292,8 @@ async def read_audio_clip(
             except ProcessLookupError:
                 pass
             return None
-        if not chunk:
-            return None  # Stream ended
+        except asyncio.IncompleteReadError:
+            return None  # Stream ended (EOF with partial chunk)
 
         # Decode PCM chunk
         pcm = np.frombuffer(chunk, dtype=np.int16)

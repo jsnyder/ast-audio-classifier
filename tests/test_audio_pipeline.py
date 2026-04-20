@@ -1,5 +1,6 @@
 """Tests for audio pipeline: dB computation, AmbientMonitor, HPF, adaptive thresholds, and pre-trigger buffer."""
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -322,6 +323,15 @@ class _FakeStdout:
             return b""
         chunk = self._chunks[self._index]
         self._index += 1
+        return chunk
+
+    async def readexactly(self, n: int) -> bytes:
+        if self._index >= len(self._chunks):
+            raise asyncio.IncompleteReadError(b"", n)
+        chunk = self._chunks[self._index]
+        self._index += 1
+        if len(chunk) < n:
+            raise asyncio.IncompleteReadError(chunk, n)
         return chunk
 
 
