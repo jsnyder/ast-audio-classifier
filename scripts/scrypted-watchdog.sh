@@ -4,8 +4,10 @@
 # Cron: */10 * * * * root /usr/local/bin/scrypted-watchdog.sh
 #
 # Two trigger paths:
-#   1. ALL cameras failing right now (existing fast path, confirmed with 30s retry)
-#   2. ANY single camera failing for N consecutive polls (~N*10 min)
+#   1. ALL cameras failing right now (fast path, confirmed with 30s retry)
+#   2. 2+ cameras failing for N consecutive polls (~N*10 min). Single-camera
+#      stuckness is usually a device/WiFi problem that a Scrypted reboot won't
+#      fix — so we require at least two before restarting.
 # A cooldown prevents restart loops.
 
 set -u
@@ -78,24 +80,36 @@ if all_failing_now; then
     fi
 fi
 
-# --- Path 2: single camera stuck across N consecutive polls --------------------
+# --- Path 2: 2+ cameras stuck across N consecutive polls ----------------------
 
+# First pass: update each camera's consecutive-failure counter.
 for id in "${CAMERAS[@]}"; do
     count_file="${STATE_DIR}/cam-${id}.count"
     code=$(probe_camera "${id}")
     if [ "${code}" = "200" ]; then
-        : > "${count_file}"  # reset on success
+        : > "${count_file}"
     else
-        prev=$(cat "${count_file}" 2>/dev/null || echo 0)
-        next=$((prev + 1))
-        echo "${next}" > "${count_file}"
-        if [ "${next}" -ge "${STUCK_POLL_THRESHOLD}" ]; then
-            restart_scrypted "Camera ${id} stuck for ${next} consecutive polls (HTTP ${code:-no-response})"
-            # Reset ALL counters after restart attempt — reboot should clear state
-            for c in "${CAMERAS[@]}"; do
-                : > "${STATE_DIR}/cam-${c}.count"
-            done
-            exit 0
-        fi
+        prev=$(cat "${count_file}" 2>/dev/null)
+        prev=${prev:-0}
+        echo "$((prev + 1))" > "${count_file}"
     fi
 done
+
+# Second pass: collect cameras currently over threshold and fire only if 2+.
+stuck_summary=""
+stuck_count=0
+for id in "${CAMERAS[@]}"; do
+    count=$(cat "${STATE_DIR}/cam-${id}.count" 2>/dev/null)
+    count=${count:-0}
+    if [ "${count}" -ge "${STUCK_POLL_THRESHOLD}" ]; then
+        stuck_count=$((stuck_count + 1))
+        stuck_summary="${stuck_summary}${id}(${count}) "
+    fi
+done
+
+if [ "${stuck_count}" -ge 2 ]; then
+    restart_scrypted "${stuck_count} cameras stuck: ${stuck_summary}"
+    for c in "${CAMERAS[@]}"; do
+        : > "${STATE_DIR}/cam-${c}.count"
+    done
+fi
