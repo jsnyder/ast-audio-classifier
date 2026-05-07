@@ -82,7 +82,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 CLAPConfig as CLAPVerifierConfig,
             )
 
-            never_suppress = frozenset(config.clap.never_suppress) if config.clap.never_suppress else DEFAULT_NEVER_SUPPRESS
+            never_suppress = (
+                frozenset(config.clap.never_suppress)
+                if config.clap.never_suppress
+                else DEFAULT_NEVER_SUPPRESS
+            )
             clap_cfg = CLAPVerifierConfig(
                 enabled=True,
                 model=config.clap.model,
@@ -116,9 +120,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         # Wait for MQTT connection via event (timeout 5s)
         try:
-            await asyncio.wait_for(
-                app.state.publisher.connected_event.wait(), timeout=5.0
-            )
+            await asyncio.wait_for(app.state.publisher.connected_event.wait(), timeout=5.0)
         except TimeoutError:
             logger.error("Failed to connect to MQTT broker within 5s")
 
@@ -245,9 +247,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             from .url_resolver import ScryptedApiResolver
 
             app.state.resolver = ScryptedApiResolver(config.scrypted_api_url)
-            logger.info(
-                "Scrypted API resolver enabled: %s", config.scrypted_api_url
-            )
+            logger.info("Scrypted API resolver enabled: %s", config.scrypted_api_url)
 
         # Start camera streams
         app.state.stream_manager = StreamManager(
@@ -408,9 +408,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         content = await file.read(MAX_UPLOAD_BYTES + 1)
         if len(content) > MAX_UPLOAD_BYTES:
-            return JSONResponse(
-                status_code=413, content={"error": "File too large (max 10MB)"}
-            )
+            return JSONResponse(status_code=413, content={"error": "File too large (max 10MB)"})
 
         # Try to detect WAV header
         if content[:4] == b"RIFF":
@@ -420,10 +418,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 with wave.open(io.BytesIO(content)) as wav:
                     frames = wav.readframes(wav.getnframes())
                     framerate = wav.getframerate()
-            except (wave.Error, EOFError) as e:
-                return JSONResponse(
-                    status_code=400, content={"error": f"Invalid WAV file: {e}"}
-                )
+            except (wave.Error, EOFError):
+                return JSONResponse(status_code=400, content={"error": "Invalid WAV file"})
             audio_int16 = np.frombuffer(frames, dtype=np.int16)
             audio = audio_int16.astype(np.float32) / 32768.0
             if framerate != 16000:
@@ -457,9 +453,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         # CLAP verification if available
         clap_v = getattr(request.app.state, "clap_verifier", None)
         if results and clap_v is not None:
-            results = await asyncio.to_thread(
-                clap_v.verify, audio, results, "upload"
-            )
+            results = await asyncio.to_thread(clap_v.verify, audio, results, "upload")
 
         return JSONResponse(
             content={

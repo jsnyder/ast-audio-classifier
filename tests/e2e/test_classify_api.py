@@ -31,9 +31,7 @@ results = []
 
 
 def curl_json(url: str) -> dict:
-    r = subprocess.run(
-        ["curl", "-sf", url], capture_output=True, text=True, timeout=10
-    )
+    r = subprocess.run(["curl", "-sf", url], capture_output=True, text=True, timeout=10)
     if r.returncode != 0:
         raise RuntimeError(f"curl failed: {r.stderr}")
     return json.loads(r.stdout)
@@ -101,9 +99,7 @@ for wav in sorted(SAMPLES_DIR.glob("*.wav")):
     top = classifications[0]
     top_group = top["group"]
     top_conf = top["confidence"]
-    all_groups = ", ".join(
-        f"{r['group']}({r['confidence']:.2f})" for r in classifications
-    )
+    all_groups = ", ".join(f"{r['group']}({r['confidence']:.2f})" for r in classifications)
 
     if not expected_groups:
         print(f"OK ({all_groups}, {db_level} dB)")
@@ -125,8 +121,7 @@ for wav in sorted(SAMPLES_DIR.glob("*.wav")):
             )
             passed += 1
             results.append(
-                f"PASS {name}: {m['group']}({m['confidence']:.2f}) "
-                f"(top was {top_group})"
+                f"PASS {name}: {m['group']}({m['confidence']:.2f}) (top was {top_group})"
             )
         else:
             print(

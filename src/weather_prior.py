@@ -7,6 +7,7 @@ When it's clear/sunny, rain_storm detections are likely false positives (raise t
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import enum
 import json
 import logging
@@ -90,7 +91,9 @@ class WeatherPrior:
             if new_condition != self._condition:
                 logger.info(
                     "Weather prior: %s -> %s (HA state: %s)",
-                    self._condition.value, new_condition.value, state,
+                    self._condition.value,
+                    new_condition.value,
+                    state,
                 )
             self._condition = new_condition
         except Exception:
@@ -105,7 +108,9 @@ class WeatherPrior:
         self._task = asyncio.create_task(self._poll_loop(), name="weather-prior")
         logger.info(
             "Weather prior started: entity=%s, interval=%.0fs, condition=%s",
-            self._entity_id, self._poll_interval, self._condition.value,
+            self._entity_id,
+            self._poll_interval,
+            self._condition.value,
         )
 
     async def _poll_loop(self) -> None:
@@ -118,7 +123,5 @@ class WeatherPrior:
         self._task = None
         if task and not task.done():
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass

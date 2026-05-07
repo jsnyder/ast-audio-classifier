@@ -251,9 +251,7 @@ class TestLoadConfig:
 
     def test_missing_mqtt_raises(self, tmp_path):
         cfg_file = tmp_path / "config.yaml"
-        cfg_file.write_text(
-            yaml.dump({"cameras": [{"name": "x", "rtsp_url": "rtsp://h/s"}]})
-        )
+        cfg_file.write_text(yaml.dump({"cameras": [{"name": "x", "rtsp_url": "rtsp://h/s"}]}))
         with pytest.raises((KeyError, TypeError, ValueError)):
             load_config(str(cfg_file))
 
@@ -488,12 +486,12 @@ class TestLLMJudgeConfig:
 class TestLLMJudgeConfigValidation:
     def test_enabled_without_api_base_raises(self):
         """Enabling LLM judge without api_base must raise immediately."""
-        with pytest.raises(ValueError, match="llm_judge.api_base must be set"):
+        with pytest.raises(ValueError, match=r"llm_judge\.api_base must be set"):
             LLMJudgeConfig(enabled=True, api_base="")
 
     def test_enabled_without_api_key_raises(self):
         """Enabling LLM judge without api_key must raise immediately."""
-        with pytest.raises(ValueError, match="llm_judge.api_key must be set"):
+        with pytest.raises(ValueError, match=r"llm_judge\.api_key must be set"):
             LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="")
 
     def test_enabled_with_api_base_and_key_passes(self):
@@ -502,15 +500,24 @@ class TestLLMJudgeConfigValidation:
 
     def test_sample_rate_out_of_range_raises(self):
         with pytest.raises(ValueError, match="sample_rate"):
-            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="sk-test", sample_rate=1.5)
+            LLMJudgeConfig(
+                enabled=True, api_base="https://example.com/v1", api_key="sk-test", sample_rate=1.5
+            )
 
     def test_max_clips_zero_raises(self):
         with pytest.raises(ValueError, match="max_clips"):
-            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="sk-test", max_clips=0)
+            LLMJudgeConfig(
+                enabled=True, api_base="https://example.com/v1", api_key="sk-test", max_clips=0
+            )
 
     def test_timeout_zero_raises(self):
         with pytest.raises(ValueError, match="timeout_seconds"):
-            LLMJudgeConfig(enabled=True, api_base="https://example.com/v1", api_key="sk-test", timeout_seconds=0)
+            LLMJudgeConfig(
+                enabled=True,
+                api_base="https://example.com/v1",
+                api_key="sk-test",
+                timeout_seconds=0,
+            )
 
 
 class TestLoadConfigLLMJudge:
@@ -579,7 +586,11 @@ class TestLoadConfigLLMJudge:
         """LLM judge section with enabled=true and api_base should use other defaults."""
         cfg_data = {
             **MINIMAL_CONFIG,
-            "llm_judge": {"enabled": True, "api_base": "https://litellm.example.com/v1", "api_key": "sk-test"},
+            "llm_judge": {
+                "enabled": True,
+                "api_base": "https://litellm.example.com/v1",
+                "api_key": "sk-test",
+            },
         }
         cfg_file = tmp_path / "config.yaml"
         cfg_file.write_text(yaml.dump(cfg_data))

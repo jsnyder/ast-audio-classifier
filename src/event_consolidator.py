@@ -19,13 +19,15 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 # Groups that bypass the dedup window and fire immediately
-SAFETY_GROUPS = frozenset({
-    "smoke_alarm",
-    "glass_break",
-    "siren",
-    "screaming",
-    "crying",
-})
+SAFETY_GROUPS = frozenset(
+    {
+        "smoke_alarm",
+        "glass_break",
+        "siren",
+        "screaming",
+        "crying",
+    }
+)
 
 
 @dataclass
@@ -37,7 +39,7 @@ class ConsolidatedEpisode:
     max_confidence: float = 0.0
     detection_count: int = 0
     first_detected: float = 0.0  # monotonic trigger_time
-    last_detected: float = 0.0   # monotonic trigger_time
+    last_detected: float = 0.0  # monotonic trigger_time
     published: bool = False
 
 
@@ -143,8 +145,6 @@ class EventConsolidator:
         cutoff = self._auto_off + self._window + 10
         for group in list(self._episodes):
             episodes = self._episodes[group]
-            self._episodes[group] = [
-                ep for ep in episodes if now - ep.last_detected < cutoff
-            ]
+            self._episodes[group] = [ep for ep in episodes if now - ep.last_detected < cutoff]
             if not self._episodes[group]:
                 del self._episodes[group]

@@ -78,7 +78,7 @@ class FakeCLAPPipeline:
 
     def __call__(self, audio, candidate_labels=None, **kwargs):
         results = []
-        for label in (candidate_labels or []):
+        for label in candidate_labels or []:
             score = self._scores.get(label, 0.01)
             results.append({"label": label, "score": score})
         # Sort by score descending (like real pipeline)
@@ -120,9 +120,7 @@ class TestCLAPVerifierConfirm:
         """When CLAP scores AST's group >= confirm_threshold, mark verified."""
         verifier = _make_verifier({"a dog barking": 0.72})
         ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         assert len(results) == 1
         assert results[0].clap_verified is True
         assert results[0].clap_score == 0.72
@@ -133,9 +131,7 @@ class TestCLAPVerifierConfirm:
         """Exactly at confirm_threshold should still confirm."""
         verifier = _make_verifier({"a dog barking": 0.30})
         ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         assert len(results) == 1
         assert results[0].clap_verified is True
 
@@ -144,28 +140,28 @@ class TestCLAPVerifierSuppress:
     def test_low_clap_with_strong_alternative_suppresses(self):
         """When CLAP disagrees and has a strong alternative, suppress."""
         # AST says music, CLAP says vacuum_cleaner strongly, music weakly
-        verifier = _make_verifier({
-            "a song playing in the background": 0.05,
-            "a vacuum cleaner running": 0.65,
-        })
-        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a song playing in the background": 0.05,
+                "a vacuum cleaner running": 0.65,
+            }
         )
+        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         # Music should be suppressed (CLAP scores music < 0.15, vacuum >= 0.40)
         music_results = [r for r in results if r.group == "music"]
         assert len(music_results) == 0
 
     def test_no_suppress_when_clap_above_suppress_threshold(self):
         """If CLAP scores the group >= suppress_threshold, don't suppress."""
-        verifier = _make_verifier({
-            "a song playing in the background": 0.20,  # >= 0.15 suppress_threshold
-            "a vacuum cleaner running": 0.65,
-        })
-        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a song playing in the background": 0.20,  # >= 0.15 suppress_threshold
+                "a vacuum cleaner running": 0.65,
+            }
         )
+        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         # Not suppressed because clap score for music (0.20) >= suppress_threshold (0.15)
         # Not confirmed either because 0.20 < confirm_threshold (0.30)
         music_results = [r for r in results if r.group == "music"]
@@ -174,15 +170,15 @@ class TestCLAPVerifierSuppress:
 
     def test_no_suppress_without_strong_alternative(self):
         """If CLAP has no strong alternative, don't suppress even with low score."""
-        verifier = _make_verifier({
-            "a song playing in the background": 0.05,
-            # No alternative above override_threshold (0.40)
-            "a vacuum cleaner running": 0.30,
-        })
-        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a song playing in the background": 0.05,
+                # No alternative above override_threshold (0.40)
+                "a vacuum cleaner running": 0.30,
+            }
         )
+        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         music_results = [r for r in results if r.group == "music"]
         assert len(music_results) == 1
         assert music_results[0].clap_verified is False
@@ -191,14 +187,14 @@ class TestCLAPVerifierSuppress:
 class TestCLAPVerifierSuppressedTracking:
     def test_suppressed_results_tracked(self):
         """Suppressed results are captured in last_suppressed."""
-        verifier = _make_verifier({
-            "a song playing in the background": 0.05,
-            "a vacuum cleaner running": 0.65,
-        })
-        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a song playing in the background": 0.05,
+                "a vacuum cleaner running": 0.65,
+            }
         )
+        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         # Music suppressed; vacuum_cleaner may be discovered via CLAP
         assert not any(r.group == "music" for r in results)
         assert len(verifier.last_suppressed) == 1
@@ -207,17 +203,21 @@ class TestCLAPVerifierSuppressedTracking:
 
     def test_last_suppressed_resets_between_calls(self):
         """Each verify() call resets last_suppressed."""
-        verifier = _make_verifier({
-            "a song playing in the background": 0.05,
-            "a vacuum cleaner running": 0.65,
-        })
+        verifier = _make_verifier(
+            {
+                "a song playing in the background": 0.05,
+                "a vacuum cleaner running": 0.65,
+            }
+        )
         ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
         verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         assert len(verifier.last_suppressed) == 1
         # Second call with no suppression
-        verifier2 = _make_verifier({
-            "a song playing in the background": 0.35,
-        })
+        _make_verifier(
+            {
+                "a song playing in the background": 0.35,
+            }
+        )
         # Reuse same verifier but with different CLAP scores — use the original
         # since _make_verifier creates a new one. Just verify reset behavior.
         verifier.verify(
@@ -234,18 +234,18 @@ class TestCLAPVerifierSuppressedTracking:
 
     def test_non_suppressed_not_in_last_suppressed(self):
         """Confirmed and unverified results are not in last_suppressed."""
-        verifier = _make_verifier({
-            "a dog barking": 0.80,
-            "a song playing in the background": 0.05,
-            "a vacuum cleaner running": 0.65,
-        })
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.80,
+                "a song playing in the background": 0.05,
+                "a vacuum cleaner running": 0.65,
+            }
+        )
         ast_results = [
             _make_ast_result(label="Dog", group="dog_bark", confidence=0.85),
             _make_ast_result(label="Music", group="music", confidence=0.60),
         ]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         # dog_bark confirmed, music suppressed
         assert any(r.group == "dog_bark" for r in results)
         assert not any(r.group == "music" for r in results)
@@ -259,28 +259,24 @@ class TestCLAPVerifierNeverSuppress:
         """Safety-critical groups pass through regardless of CLAP scores."""
         for group in DEFAULT_NEVER_SUPPRESS:
             # CLAP gives near-zero score, strong alternative exists
-            verifier = _make_verifier({
-                "a vacuum cleaner running": 0.90,
-                # All prompts for the safety group get near-zero
-            })
-            ast_results = [_make_ast_result(
-                label="TestLabel", group=group, confidence=0.50
-            )]
-            results = verifier.verify(
-                np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+            verifier = _make_verifier(
+                {
+                    "a vacuum cleaner running": 0.90,
+                    # All prompts for the safety group get near-zero
+                }
             )
+            ast_results = [_make_ast_result(label="TestLabel", group=group, confidence=0.50)]
+            results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
             group_results = [r for r in results if r.group == group]
             assert len(group_results) == 1, f"Safety group {group} was suppressed!"
 
     def test_safety_group_with_high_clap_is_confirmed(self):
         """Safety group with high CLAP score gets verified=True."""
         verifier = _make_verifier({"a smoke alarm beeping": 0.80})
-        ast_results = [_make_ast_result(
-            label="Smoke detector", group="smoke_alarm", confidence=0.90
-        )]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        ast_results = [
+            _make_ast_result(label="Smoke detector", group="smoke_alarm", confidence=0.90)
+        ]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         assert len(results) == 1
         assert results[0].clap_verified is True
         assert results[0].clap_score == 0.80
@@ -289,15 +285,15 @@ class TestCLAPVerifierNeverSuppress:
 class TestCLAPVerifierDiscovery:
     def test_clap_only_discovery(self):
         """If CLAP detects a group AST missed above discovery_threshold, add it."""
-        verifier = _make_verifier({
-            "a dog barking": 0.72,
-            "a vacuum cleaner running": 0.55,  # >= discovery_threshold 0.50
-        })
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.72,
+                "a vacuum cleaner running": 0.55,  # >= discovery_threshold 0.50
+            }
+        )
         # AST only detected dog_bark
         ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         # Should have dog_bark (confirmed) + vacuum_cleaner (discovered)
         groups = {r.group for r in results}
         assert "dog_bark" in groups
@@ -310,36 +306,37 @@ class TestCLAPVerifierDiscovery:
 
     def test_no_discovery_below_threshold(self):
         """Groups below discovery_threshold are not added."""
-        verifier = _make_verifier({
-            "a dog barking": 0.72,
-            "a vacuum cleaner running": 0.40,  # < discovery_threshold 0.50
-        })
-        ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.72,
+                "a vacuum cleaner running": 0.40,  # < discovery_threshold 0.50
+            }
         )
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         groups = {r.group for r in results}
         assert "vacuum_cleaner" not in groups
 
     def test_no_duplicate_discovery_for_existing_group(self):
         """If AST already detected a group, don't add it again via discovery."""
-        verifier = _make_verifier({
-            "a dog barking": 0.72,
-        })
-        ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.72,
+            }
         )
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         dog_results = [r for r in results if r.group == "dog_bark"]
         assert len(dog_results) == 1  # Only the original, not duplicated
 
-
     def test_discovery_skips_disabled_groups(self):
         """CLAP discovery should not emit results for disabled groups."""
-        verifier = _make_verifier({
-            "a dog barking": 0.72,
-            "a car horn honking": 0.65,  # >= discovery_threshold
-        })
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.72,
+                "a car horn honking": 0.65,  # >= discovery_threshold
+            }
+        )
         ast_results = [_make_ast_result()]
         results = verifier.verify(
             np.zeros(16000, dtype=np.float32),
@@ -357,9 +354,7 @@ class TestCLAPVerifierUnverified:
         """Score between suppress and confirm thresholds = unverified."""
         verifier = _make_verifier({"a dog barking": 0.20})
         ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         assert len(results) == 1
         assert results[0].clap_verified is False
         assert results[0].clap_score == 0.20
@@ -401,9 +396,7 @@ class TestCLAPVerifierEdgeCases:
     def test_empty_ast_results_with_strong_clap_discovers(self):
         """CLAP discovery still fires on empty AST results."""
         verifier = _make_verifier({"a dog barking": 0.90})
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), [], "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), [], "test_cam")
         groups = {r.group for r in results}
         assert "dog_bark" in groups
         discovered = next(r for r in results if r.group == "dog_bark")
@@ -413,31 +406,31 @@ class TestCLAPVerifierEdgeCases:
 
     def test_multiple_ast_results(self):
         """Multiple AST results should each be verified independently."""
-        verifier = _make_verifier({
-            "a dog barking": 0.72,
-            "a voice speaking nearby": 0.45,
-        })
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.72,
+                "a voice speaking nearby": 0.45,
+            }
+        )
         ast_results = [
             _make_ast_result(label="Dog", group="dog_bark", confidence=0.85),
             _make_ast_result(label="Speech", group="speech", confidence=0.30),
         ]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         groups = {r.group for r in results}
         assert "dog_bark" in groups
         assert "speech" in groups
 
     def test_suppression_with_discovery(self):
         """Suppressed AST result + CLAP discovery = correct replacement."""
-        verifier = _make_verifier({
-            "a song playing in the background": 0.05,
-            "a vacuum cleaner running": 0.65,
-        })
-        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a song playing in the background": 0.05,
+                "a vacuum cleaner running": 0.65,
+            }
         )
+        ast_results = [_make_ast_result(label="Music", group="music", confidence=0.60)]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         # Music suppressed, vacuum discovered
         groups = {r.group for r in results}
         assert "music" not in groups
@@ -452,9 +445,7 @@ class TestCLAPVerifierInferenceFailure:
         # Replace pipeline with one that raises
         verifier._pipeline = _RaisingPipeline()
         ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         # Should get back the original AST results unmodified
         assert len(results) == 1
         assert results[0].group == "dog_bark"
@@ -488,7 +479,6 @@ class TestCLAPResample:
         resample_calls = []
         verifier = _make_verifier({"a dog barking": 0.72})
 
-
         def _tracking_resample(audio):
             resample_calls.append(len(audio))
             return audio  # Return same audio (mock doesn't care about rate)
@@ -509,14 +499,14 @@ class TestCLAPConfirmMargin:
     def test_margin_passes_when_competitive(self):
         """When CLAP score is competitive with best alternative, confirm."""
         # dog_bark=0.50, vacuum_cleaner=0.55 — difference is 0.05 < margin 0.20
-        verifier = _make_verifier({
-            "a dog barking": 0.50,
-            "a vacuum cleaner running": 0.55,
-        })
-        ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.50,
+                "a vacuum cleaner running": 0.55,
+            }
         )
+        ast_results = [_make_ast_result()]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         assert len(results) >= 1
         dog = next(r for r in results if r.group == "dog_bark")
         assert dog.clap_verified is True
@@ -525,16 +515,14 @@ class TestCLAPConfirmMargin:
         """When best alternative dominates, confirmation is rejected (unverified)."""
         # speech=0.30 (at threshold), vacuum_cleaner=0.75
         # margin check: 0.30 >= 0.75 - 0.20 = 0.55? No → unverified
-        verifier = _make_verifier({
-            "a voice speaking nearby": 0.30,
-            "a vacuum cleaner running": 0.75,
-        })
-        ast_results = [_make_ast_result(
-            label="Speech", group="speech", confidence=0.40
-        )]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a voice speaking nearby": 0.30,
+                "a vacuum cleaner running": 0.75,
+            }
         )
+        ast_results = [_make_ast_result(label="Speech", group="speech", confidence=0.40)]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         speech = [r for r in results if r.group == "speech"]
         assert len(speech) == 1
         assert speech[0].clap_verified is False  # Unverified, not confirmed
@@ -544,9 +532,7 @@ class TestCLAPConfirmMargin:
         # Only dog_bark has a score, no alternatives
         verifier = _make_verifier({"a dog barking": 0.35})
         ast_results = [_make_ast_result()]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
-        )
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         assert len(results) >= 1
         dog = next(r for r in results if r.group == "dog_bark")
         assert dog.clap_verified is True
@@ -555,16 +541,16 @@ class TestCLAPConfirmMargin:
         """Never-suppress groups bypass margin check entirely."""
         # smoke_alarm=0.30 (at threshold), vacuum_cleaner=0.80
         # Without never_suppress, margin would fail. With it, should pass through.
-        verifier = _make_verifier({
-            "a smoke alarm beeping": 0.30,
-            "a vacuum cleaner running": 0.80,
-        })
-        ast_results = [_make_ast_result(
-            label="Smoke detector", group="smoke_alarm", confidence=0.90
-        )]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "test_cam"
+        verifier = _make_verifier(
+            {
+                "a smoke alarm beeping": 0.30,
+                "a vacuum cleaner running": 0.80,
+            }
         )
+        ast_results = [
+            _make_ast_result(label="Smoke detector", group="smoke_alarm", confidence=0.90)
+        ]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "test_cam")
         smoke = [r for r in results if r.group == "smoke_alarm"]
         assert len(smoke) == 1  # Not suppressed
 
@@ -638,16 +624,20 @@ class TestNonSafetyBypassBlocked:
     """
 
     def test_speech_suppressed_despite_high_ast_confidence(self):
-        verifier = _make_verifier({
-            "a voice speaking nearby": 0.05,
-            "a vacuum cleaner running": 0.60,
-        })
-        ast_results = [_make_ast_result(
-            label="Speech", group="speech", confidence=0.85,
-        )]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        verifier = _make_verifier(
+            {
+                "a voice speaking nearby": 0.05,
+                "a vacuum cleaner running": 0.60,
+            }
         )
+        ast_results = [
+            _make_ast_result(
+                label="Speech",
+                group="speech",
+                confidence=0.85,
+            )
+        ]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "living_room")
         suppressed = verifier.last_suppressed
 
         verified_groups = [r.group for r in results if r.source == "ast"]
@@ -661,16 +651,20 @@ class TestNonSafetyBypassBlocked:
 
     def test_car_horn_suppressed_despite_high_ast_confidence(self):
         """Same scenario for car_horn — also not safety-critical."""
-        verifier = _make_verifier({
-            "a car horn honking": 0.05,
-            "a vacuum cleaner running": 0.60,
-        })
-        ast_results = [_make_ast_result(
-            label="Car horn", group="car_horn", confidence=0.82,
-        )]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        verifier = _make_verifier(
+            {
+                "a car horn honking": 0.05,
+                "a vacuum cleaner running": 0.60,
+            }
         )
+        ast_results = [
+            _make_ast_result(
+                label="Car horn",
+                group="car_horn",
+                confidence=0.82,
+            )
+        ]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "living_room")
         verified_groups = [r.group for r in results if r.source == "ast"]
         assert "car_horn" not in verified_groups, (
             "car_horn should not get AST bypass — it's not a safety group"
@@ -709,10 +703,12 @@ class TestCLAPConfounderAware:
 
     def test_confused_group_suppressed_more_easily(self):
         """Confused groups have lower suppress_threshold (0.10 vs 0.15)."""
-        verifier = _make_verifier({
-            "a dog barking": 0.08,  # below confused suppress_threshold 0.10
-            "a vacuum cleaner running": 0.65,  # strong alternative
-        })
+        verifier = _make_verifier(
+            {
+                "a dog barking": 0.08,  # below confused suppress_threshold 0.10
+                "a vacuum cleaner running": 0.65,  # strong alternative
+            }
+        )
         ast_results = [_make_ast_result()]
         results = verifier.verify(
             np.zeros(16000, dtype=np.float32),
@@ -759,32 +755,39 @@ class TestSafetyBypassPreserved:
     """
 
     def test_siren_kept_regardless_of_clap(self):
-        verifier = _make_verifier({
-            "a siren wailing": 0.05,
-            "a vacuum cleaner running": 0.60,
-        })
-        ast_results = [_make_ast_result(
-            label="Siren", group="siren", confidence=0.85,
-        )]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        verifier = _make_verifier(
+            {
+                "a siren wailing": 0.05,
+                "a vacuum cleaner running": 0.60,
+            }
         )
+        ast_results = [
+            _make_ast_result(
+                label="Siren",
+                group="siren",
+                confidence=0.85,
+            )
+        ]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "living_room")
         verified_groups = [r.group for r in results]
         assert "siren" in verified_groups, (
-            "Siren (never_suppress) must always survive — "
-            "safety-critical groups cannot be dropped"
+            "Siren (never_suppress) must always survive — safety-critical groups cannot be dropped"
         )
 
     def test_smoke_alarm_kept_regardless_of_clap(self):
-        verifier = _make_verifier({
-            "a smoke alarm beeping": 0.05,
-            "a vacuum cleaner running": 0.60,
-        })
-        ast_results = [_make_ast_result(
-            label="Smoke alarm", group="smoke_alarm", confidence=0.82,
-        )]
-        results = verifier.verify(
-            np.zeros(16000, dtype=np.float32), ast_results, "living_room"
+        verifier = _make_verifier(
+            {
+                "a smoke alarm beeping": 0.05,
+                "a vacuum cleaner running": 0.60,
+            }
         )
+        ast_results = [
+            _make_ast_result(
+                label="Smoke alarm",
+                group="smoke_alarm",
+                confidence=0.82,
+            )
+        ]
+        results = verifier.verify(np.zeros(16000, dtype=np.float32), ast_results, "living_room")
         verified_groups = [r.group for r in results]
         assert "smoke_alarm" in verified_groups

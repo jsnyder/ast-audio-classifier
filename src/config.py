@@ -35,10 +35,9 @@ class GroupConfig:
     confidence_threshold: float | None = None
 
     def __post_init__(self) -> None:
-        if self.confidence_threshold is not None:
-            if not (0.0 <= self.confidence_threshold <= 1.0):
-                msg = f"confidence_threshold must be in [0, 1], got {self.confidence_threshold}"
-                raise ValueError(msg)
+        if self.confidence_threshold is not None and not (0.0 <= self.confidence_threshold <= 1.0):
+            msg = f"confidence_threshold must be in [0, 1], got {self.confidence_threshold}"
+            raise ValueError(msg)
 
 
 @dataclass
@@ -243,9 +242,7 @@ def load_config(path: str) -> AppConfig:
         cam_dict = dict(cam_raw)
         confounders_raw = cam_dict.pop("confounders", None)
         if confounders_raw:
-            cam_dict["confounders"] = [
-                ConfounderConfig(**c) for c in confounders_raw
-            ]
+            cam_dict["confounders"] = [ConfounderConfig(**c) for c in confounders_raw]
         cam = CameraConfig(**cam_dict)
         if cam.name in seen_names:
             msg = f"Duplicate camera name: {cam.name!r}"

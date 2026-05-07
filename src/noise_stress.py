@@ -73,9 +73,7 @@ STRESS_TIERS: dict[str, float] = {
 }
 
 # Groups considered HIGH tier for calming suppression
-_HIGH_TIER_GROUPS = frozenset(
-    group for group, weight in STRESS_TIERS.items() if weight >= 3.0
-)
+_HIGH_TIER_GROUPS = frozenset(group for group, weight in STRESS_TIERS.items() if weight >= 3.0)
 
 DEFAULT_TIER_WEIGHT = 0.3
 
@@ -141,7 +139,9 @@ class DailyStats:
     peak_stressor: str | None = None
     peak_stressor_score: float = 0.0
 
-    def record(self, score: float, top_stressor: str | None, top_stressor_weight: float = 0.0) -> None:
+    def record(
+        self, score: float, top_stressor: str | None, top_stressor_weight: float = 0.0
+    ) -> None:
         """Record a score sample for this day."""
         self.min_score = min(self.min_score, score)
         self.max_score = max(self.max_score, score)
@@ -259,11 +259,7 @@ class NoiseStressScorer:
         sustained_component = self._compute_sustained(event_component)
 
         # Composite score — ADHD/autism profile weights sustained heavily
-        raw = (
-            0.20 * ambient_component
-            + 0.45 * event_component
-            + 0.35 * sustained_component
-        )
+        raw = 0.20 * ambient_component + 0.45 * event_component + 0.35 * sustained_component
         score = max(0.0, min(100.0, raw))
 
         # Diagnostics
@@ -360,7 +356,9 @@ class NoiseStressScorer:
             confidence = max(0.1, min(1.0, event.confidence))
 
             # Camera factor
-            camera_factor = CAMERA_FACTOR_BASE + CAMERA_FACTOR_PER_EXTRA * max(0, event.num_cameras - 1)
+            camera_factor = CAMERA_FACTOR_BASE + CAMERA_FACTOR_PER_EXTRA * max(
+                0, event.num_cameras - 1
+            )
 
             impulse = weight * loudness * confidence * camera_factor
 
@@ -402,8 +400,7 @@ class NoiseStressScorer:
         """Check if any HIGH-tier events are active (within 2 half-lives)."""
         threshold = self._half_life * 2
         return any(
-            e.group in _HIGH_TIER_GROUPS and (now - e.timestamp) < threshold
-            for e in self._events
+            e.group in _HIGH_TIER_GROUPS and (now - e.timestamp) < threshold for e in self._events
         )
 
     def _get_top_stressor(self, now: float) -> str | None:
@@ -418,9 +415,13 @@ class NoiseStressScorer:
                 continue
             loudness = self._loudness_factor(event.trigger_db)
             confidence = max(0.1, min(1.0, event.confidence))
-            camera_factor = CAMERA_FACTOR_BASE + CAMERA_FACTOR_PER_EXTRA * max(0, event.num_cameras - 1)
+            camera_factor = CAMERA_FACTOR_BASE + CAMERA_FACTOR_PER_EXTRA * max(
+                0, event.num_cameras - 1
+            )
             age = now - event.timestamp
-            decayed = weight * loudness * confidence * camera_factor * (0.5 ** (age / self._half_life))
+            decayed = (
+                weight * loudness * confidence * camera_factor * (0.5 ** (age / self._half_life))
+            )
             group_stress[event.group] = group_stress.get(event.group, 0.0) + decayed
 
         if not group_stress:

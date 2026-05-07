@@ -68,9 +68,7 @@ class MqttPublisher:
         self._client.loop_stop()
         self._client.disconnect()
 
-    def _on_connect(
-        self, client: mqtt.Client, userdata: object, flags: dict, rc: int
-    ) -> None:
+    def _on_connect(self, client: mqtt.Client, userdata: object, flags: dict, rc: int) -> None:
         if rc == 0:
             logger.info(
                 "Connected to MQTT broker at %s:%s",
@@ -102,9 +100,7 @@ class MqttPublisher:
         """Publish HA MQTT discovery configs for all cameras and groups."""
         for cam in self._config.cameras:
             self._publish_camera_discovery(cam)
-        logger.info(
-            "Published MQTT discovery for %d cameras", len(self._config.cameras)
-        )
+        logger.info("Published MQTT discovery for %d cameras", len(self._config.cameras))
 
     def _publish_camera_discovery(self, cam: CameraConfig) -> None:
         """Publish discovery payloads for one camera's entities."""
@@ -128,9 +124,7 @@ class MqttPublisher:
                 "device": self._device_info(cam),
                 "icon": self._icon_for_group(group),
             }
-            self._client.publish(
-                discovery_topic, json.dumps(payload), qos=1, retain=True
-            )
+            self._client.publish(discovery_topic, json.dumps(payload), qos=1, retain=True)
 
         # Sensor: last audio event
         last_event_id = f"ast_{cam.name}_last_event"
@@ -341,9 +335,7 @@ class MqttPublisher:
                 },
                 "icon": self._icon_for_group(group),
             }
-            self._client.publish(
-                discovery_topic, json.dumps(payload), qos=1, retain=True
-            )
+            self._client.publish(discovery_topic, json.dumps(payload), qos=1, retain=True)
         logger.info("Published consolidated MQTT discovery for %d groups", len(LABEL_GROUPS))
 
     def publish_noise_stress_discovery(self) -> None:
@@ -370,9 +362,7 @@ class MqttPublisher:
             },
             "icon": "mdi:head-alert",
         }
-        self._client.publish(
-            discovery_topic, json.dumps(payload), qos=1, retain=True
-        )
+        self._client.publish(discovery_topic, json.dumps(payload), qos=1, retain=True)
         logger.info("Published noise stress MQTT discovery")
 
     def publish_noise_stress_score(self, score_data: dict) -> None:

@@ -210,9 +210,9 @@ class TestLabelGroups:
         audioset = AudioSetLabels()
         for group, labels in LABEL_GROUPS.items():
             for label in labels:
-                assert (
-                    label in audioset
-                ), f"{label!r} in group {group!r} is not a valid AudioSet label"
+                assert label in audioset, (
+                    f"{label!r} in group {group!r} is not a valid AudioSet label"
+                )
 
 
 class TestGetGroupForLabel:
@@ -288,7 +288,9 @@ class TestGetTopGroupMatchPerGroupThreshold:
         predictions = [("Dog", 0.4), ("Music", 0.3)]
         group_thresholds = {"music": 0.60}
         result = get_top_group_match(
-            predictions, threshold=0.15, all_groups=True,
+            predictions,
+            threshold=0.15,
+            all_groups=True,
             group_thresholds=group_thresholds,
         )
         groups = {r[0] for r in result}
@@ -299,7 +301,9 @@ class TestGetTopGroupMatchPerGroupThreshold:
         predictions = [("Music", 0.75)]
         group_thresholds = {"music": 0.60}
         result = get_top_group_match(
-            predictions, threshold=0.15, all_groups=True,
+            predictions,
+            threshold=0.15,
+            all_groups=True,
             group_thresholds=group_thresholds,
         )
         assert len(result) == 1
@@ -308,7 +312,9 @@ class TestGetTopGroupMatchPerGroupThreshold:
     def test_disabled_group_excluded(self):
         predictions = [("Dog", 0.8), ("Vehicle horn, car horn, honking", 0.9)]
         result = get_top_group_match(
-            predictions, threshold=0.15, all_groups=True,
+            predictions,
+            threshold=0.15,
+            all_groups=True,
             disabled_groups={"car_horn"},
         )
         groups = {r[0] for r in result}
@@ -318,7 +324,9 @@ class TestGetTopGroupMatchPerGroupThreshold:
     def test_no_per_group_thresholds_uses_global(self):
         predictions = [("Dog", 0.3), ("Music", 0.3)]
         result = get_top_group_match(
-            predictions, threshold=0.15, all_groups=True,
+            predictions,
+            threshold=0.15,
+            all_groups=True,
         )
         assert len(result) == 2
 
@@ -326,7 +334,8 @@ class TestGetTopGroupMatchPerGroupThreshold:
         predictions = [("Music", 0.5), ("Dog", 0.3)]
         group_thresholds = {"music": 0.60}
         result = get_top_group_match(
-            predictions, threshold=0.15,
+            predictions,
+            threshold=0.15,
             group_thresholds=group_thresholds,
         )
         assert result is not None

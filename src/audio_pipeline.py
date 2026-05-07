@@ -7,6 +7,7 @@ When volume exceeds the dB threshold, we buffer a clip for classification.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import time
@@ -42,6 +43,7 @@ def _emit_ffmpeg_error_event(text: str, safe_url: str) -> None:
                 detail=text[:200],
             )
             return
+
 
 CHUNK_SAMPLES = 1600  # 100ms at 16kHz
 SAMPLE_RATE = 16000
@@ -100,9 +102,7 @@ def compute_rms_db(pcm_int16: np.ndarray) -> float:
     return max(db, DB_FLOOR)
 
 
-async def start_ffmpeg(
-    rtsp_url: str, *, highpass_freq: int = 0
-) -> asyncio.subprocess.Process:
+async def start_ffmpeg(rtsp_url: str, *, highpass_freq: int = 0) -> asyncio.subprocess.Process:
     """Start ffmpeg to extract 16kHz mono PCM from an RTSP stream.
 
     Args:
@@ -131,17 +131,19 @@ async def start_ffmpeg(
     if highpass_freq > 0:
         cmd.extend(["-af", f"highpass=f={highpass_freq},alimiter=limit=0.95:attack=5:release=50"])
 
-    cmd.extend([
-        "-acodec",
-        "pcm_s16le",
-        "-ar",
-        str(SAMPLE_RATE),
-        "-ac",
-        "1",
-        "-f",
-        "s16le",
-        "pipe:1",
-    ])
+    cmd.extend(
+        [
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            str(SAMPLE_RATE),
+            "-ac",
+            "1",
+            "-f",
+            "s16le",
+            "pipe:1",
+        ]
+    )
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -288,15 +290,11 @@ async def read_audio_clip(
 
     while True:
         try:
-            chunk = await asyncio.wait_for(
-                process.stdout.readexactly(CHUNK_BYTES), timeout=30.0
-            )
+            chunk = await asyncio.wait_for(process.stdout.readexactly(CHUNK_BYTES), timeout=30.0)
         except TimeoutError:
             logger.warning("ffmpeg stdout read timeout (pid=%s), killing process", process.pid)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 process.kill()
-            except ProcessLookupError:
-                pass
             return None
         except asyncio.IncompleteReadError:
             return None  # Stream ended (EOF with partial chunk)
@@ -334,7 +332,9 @@ async def read_audio_clip(
             samples_recorded = sum(len(np.frombuffer(b, dtype=np.int16)) for b in buffer)
             logger.debug(
                 "Trigger at %.1f dB (threshold %.1f), pre-buffer=%d chunks",
-                db, effective_threshold, len(pre_buffer),
+                db,
+                effective_threshold,
+                len(pre_buffer),
             )
         else:
             pre_buffer.append(chunk)
