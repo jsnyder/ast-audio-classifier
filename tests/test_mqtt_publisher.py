@@ -36,6 +36,7 @@ from src.mqtt_publisher import (  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_config(
     cameras: list[CameraConfig] | None = None,
     auto_off_seconds: int = 30,
@@ -50,7 +51,8 @@ def _make_config(
             username=mqtt_username,
             password=mqtt_password,
         ),
-        cameras=cameras or [
+        cameras=cameras
+        or [
             CameraConfig(name="front_door", rtsp_url="rtsp://192.168.1.10/stream"),
         ],
         auto_off_seconds=auto_off_seconds,
@@ -186,8 +188,7 @@ class TestConnectDisconnect:
         pub.disconnect()
 
         cam_avail_calls = [
-            c for c in pub._client.publish.call_args_list
-            if "availability" in c.args[0]
+            c for c in pub._client.publish.call_args_list if "availability" in c.args[0]
         ]
         for c in cam_avail_calls:
             assert c.args[1] == "offline"
@@ -225,7 +226,9 @@ class TestCameraDiscovery:
         assert payload["name"] == "AST Front Door Last Audio Event"
         assert payload["icon"] == "mdi:waveform"
         assert payload["state_topic"] == f"{TOPIC_PREFIX}/front_door/last_event/state"
-        assert payload["json_attributes_topic"] == f"{TOPIC_PREFIX}/front_door/last_event/attributes"
+        assert (
+            payload["json_attributes_topic"] == f"{TOPIC_PREFIX}/front_door/last_event/attributes"
+        )
         assert payload["availability_topic"] == f"{TOPIC_PREFIX}/front_door/availability"
 
     def test_status_binary_sensor_discovery(self):
@@ -593,7 +596,9 @@ class TestConsolidatedDiscovery:
         assert payload["unique_id"] == "ast_consolidated_dog_bark"
         assert payload["name"] == "AST Consolidated Dog Bark"
         assert payload["state_topic"] == f"{TOPIC_PREFIX}/consolidated/dog_bark/state"
-        assert payload["json_attributes_topic"] == f"{TOPIC_PREFIX}/consolidated/dog_bark/attributes"
+        assert (
+            payload["json_attributes_topic"] == f"{TOPIC_PREFIX}/consolidated/dog_bark/attributes"
+        )
         assert payload["off_delay"] == 20
         assert payload["device_class"] == "sound"
         assert payload["icon"] == "mdi:dog"
@@ -795,13 +800,15 @@ class TestPublishNoiseStressScore:
         pub = MqttPublisher(config)
         pub._client.reset_mock()
 
-        pub.publish_noise_stress_score({
-            "score": 0,
-            "ambient_component": 0,
-            "event_component": 0,
-            "sustained_component": 0,
-            "recent_event_count": 0,
-        })
+        pub.publish_noise_stress_score(
+            {
+                "score": 0,
+                "ambient_component": 0,
+                "event_component": 0,
+                "sustained_component": 0,
+                "recent_event_count": 0,
+            }
+        )
         assert pub._client.publish.call_count == 2  # state + attributes
 
 
@@ -825,7 +832,8 @@ class TestOnConnect:
             assert pub.connected is True
             # Should publish online status
             online_calls = [
-                c for c in pub._client.publish.call_args_list
+                c
+                for c in pub._client.publish.call_args_list
                 if c.args[0] == f"{TOPIC_PREFIX}/status" and c.args[1] == "online"
             ]
             assert len(online_calls) == 1

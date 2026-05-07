@@ -882,9 +882,7 @@ def get_top_group_match(
         if disabled_groups and group in disabled_groups:
             continue
         effective_threshold = (
-            group_thresholds.get(group, threshold)
-            if group_thresholds is not None
-            else threshold
+            group_thresholds.get(group, threshold) if group_thresholds is not None else threshold
         )
         if score < effective_threshold:
             continue
@@ -894,9 +892,7 @@ def get_top_group_match(
     if not group_best:
         return [] if all_groups else None
 
-    results = [
-        (group, score, raw_label) for group, (score, raw_label) in group_best.items()
-    ]
+    results = [(group, score, raw_label) for group, (score, raw_label) in group_best.items()]
     results.sort(key=lambda x: x[1], reverse=True)
 
     if all_groups:

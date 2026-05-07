@@ -117,9 +117,7 @@ class TestConfounderMonitor:
         monitor = self._make_monitor([cam])
         # Simulate state being "playing"
         monitor._entity_states["media_player.tv"] = "playing"
-        assert monitor.get_confused_groups("living_room") == frozenset(
-            {"car_horn", "siren"}
-        )
+        assert monitor.get_confused_groups("living_room") == frozenset({"car_horn", "siren"})
 
     def test_multiple_confounders_union(self):
         """Multiple active confounders should union their confused groups."""
@@ -157,9 +155,7 @@ class TestConfounderMonitor:
         monitor = self._make_monitor([cam])
         monitor._entity_states["media_player.tv"] = "playing"
         monitor._entity_states["sensor.furnace_power"] = "50"  # Not active
-        assert monitor.get_confused_groups("living_room") == frozenset(
-            {"car_horn", "siren"}
-        )
+        assert monitor.get_confused_groups("living_room") == frozenset({"car_horn", "siren"})
 
     def test_get_confounder_context_returns_match(self):
         conf = ConfounderConfig(
@@ -201,13 +197,15 @@ class TestConfounderMonitor:
 
     def test_standalone_mode_not_available(self):
         """Without SUPERVISOR_TOKEN, monitor should report not available."""
-        cam = self._make_camera(confounders=[
-            ConfounderConfig(
-                entity_id="media_player.tv",
-                active_when="!off",
-                confused_groups=["car_horn"],
-            )
-        ])
+        cam = self._make_camera(
+            confounders=[
+                ConfounderConfig(
+                    entity_id="media_player.tv",
+                    active_when="!off",
+                    confused_groups=["car_horn"],
+                )
+            ]
+        )
         monitor = self._make_monitor([cam])
         assert monitor.available is False
 

@@ -10,10 +10,9 @@ class TestConfounderConfigParsing:
     """Test that confounders are correctly parsed from YAML config."""
 
     def _write_config(self, yaml_content: str) -> str:
-        f = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
-        f.write(yaml_content)
-        f.close()
-        return f.name
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(yaml_content)
+            return f.name
 
     def test_camera_without_confounders(self):
         path = self._write_config("""
@@ -86,17 +85,24 @@ class TestClassificationResultConfounderFields:
 
     def test_default_not_confounded(self):
         r = ClassificationResult(
-            label="Dog", group="dog_bark", confidence=0.85,
-            top_5=[], db_level=-25.0,
+            label="Dog",
+            group="dog_bark",
+            confidence=0.85,
+            top_5=[],
+            db_level=-25.0,
         )
         assert r.confounded is False
         assert r.confounder_entity is None
 
     def test_confounded_to_dict(self):
         r = ClassificationResult(
-            label="Car horn", group="car_horn", confidence=0.70,
-            top_5=[], db_level=-20.0,
-            confounded=True, confounder_entity="media_player.tv",
+            label="Car horn",
+            group="car_horn",
+            confidence=0.70,
+            top_5=[],
+            db_level=-20.0,
+            confounded=True,
+            confounder_entity="media_player.tv",
         )
         d = r.to_dict()
         assert d["confounded"] is True
@@ -104,8 +110,11 @@ class TestClassificationResultConfounderFields:
 
     def test_not_confounded_to_dict_excludes_fields(self):
         r = ClassificationResult(
-            label="Dog", group="dog_bark", confidence=0.85,
-            top_5=[], db_level=-25.0,
+            label="Dog",
+            group="dog_bark",
+            confidence=0.85,
+            top_5=[],
+            db_level=-25.0,
         )
         d = r.to_dict()
         assert "confounded" not in d

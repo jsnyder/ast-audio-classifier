@@ -347,15 +347,9 @@ class TestStreamManagerCLAPFields:
         source = Path(__file__).parent.parent / "src" / "stream_manager.py"
         content = source.read_text()
         # The log_event call must include CLAP fields
-        assert "clap_verified" in content, (
-            "stream_manager.py must pass clap_verified to log_event"
-        )
-        assert "clap_score" in content, (
-            "stream_manager.py must pass clap_score to log_event"
-        )
-        assert "clap_label" in content, (
-            "stream_manager.py must pass clap_label to log_event"
-        )
+        assert "clap_verified" in content, "stream_manager.py must pass clap_verified to log_event"
+        assert "clap_score" in content, "stream_manager.py must pass clap_score to log_event"
+        assert "clap_label" in content, "stream_manager.py must pass clap_label to log_event"
 
 
 class TestSendBatch:

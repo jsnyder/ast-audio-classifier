@@ -10,6 +10,7 @@ suppressed — so downstream consumers can decide how to handle them.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -21,11 +22,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Regex patterns for active_when expressions
-_NEGATE_RE = re.compile(r"^!(.+)$")         # "!off" → state != "off"
-_GT_RE = re.compile(r"^>([\d.]+)$")          # ">200" → float(state) > 200
-_GTE_RE = re.compile(r"^>=([\d.]+)$")        # ">=200" → float(state) >= 200
-_LT_RE = re.compile(r"^<([\d.]+)$")          # "<50" → float(state) < 50
-_LTE_RE = re.compile(r"^<=([\d.]+)$")        # "<=50" → float(state) <= 50
+_NEGATE_RE = re.compile(r"^!(.+)$")  # "!off" → state != "off"
+_GT_RE = re.compile(r"^>([\d.]+)$")  # ">200" → float(state) > 200
+_GTE_RE = re.compile(r"^>=([\d.]+)$")  # ">=200" → float(state) >= 200
+_LT_RE = re.compile(r"^<([\d.]+)$")  # "<50" → float(state) < 50
+_LTE_RE = re.compile(r"^<=([\d.]+)$")  # "<=50" → float(state) <= 50
 
 
 def evaluate_condition(active_when: str, state: str) -> bool:
@@ -110,8 +111,7 @@ class ConfounderMonitor:
 
         if not self._available:
             logger.warning(
-                "SUPERVISOR_TOKEN not set — confounder monitoring disabled "
-                "(standalone Docker mode)"
+                "SUPERVISOR_TOKEN not set — confounder monitoring disabled (standalone Docker mode)"
             )
 
     @property
@@ -127,9 +127,7 @@ class ConfounderMonitor:
             return
         # Do one immediate poll before starting the loop
         await self._poll_states()
-        self._task = asyncio.create_task(
-            self._poll_loop(), name="confounder-monitor"
-        )
+        self._task = asyncio.create_task(self._poll_loop(), name="confounder-monitor")
         logger.info(
             "Confounder monitor started: tracking %d entities for %d cameras",
             len(self._entity_ids),
@@ -142,10 +140,8 @@ class ConfounderMonitor:
         self._task = None
         if task and not task.done():
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
     async def _poll_loop(self) -> None:
         """Periodically poll entity states on a monotonic deadline."""
@@ -206,7 +202,9 @@ class ConfounderMonitor:
                 if old_state != new_state:
                     logger.debug(
                         "Confounder entity %s: %s -> %s",
-                        entity_id, old_state, new_state,
+                        entity_id,
+                        old_state,
+                        new_state,
                     )
                 new_states[entity_id] = new_state
             # Atomic replacement — readers always see a consistent snapshot
@@ -234,9 +232,7 @@ class ConfounderMonitor:
             groups.update(c.confused_groups)
         return frozenset(groups)
 
-    def get_confounder_context(
-        self, camera_name: str, group: str
-    ) -> dict | None:
+    def get_confounder_context(self, camera_name: str, group: str) -> dict | None:
         """Return confounder context if a group is confounded, else None.
 
         Returns: {"entity_id": str, "state": str, "active_when": str}

@@ -28,13 +28,15 @@ CLAP_SAMPLE_RATE = 48000
 AST_SAMPLE_RATE = 16000
 
 # Default never-suppress groups (safety-critical)
-DEFAULT_NEVER_SUPPRESS = frozenset({
-    "smoke_alarm",
-    "glass_break",
-    "siren",
-    "screaming",
-    "crying",
-})
+DEFAULT_NEVER_SUPPRESS = frozenset(
+    {
+        "smoke_alarm",
+        "glass_break",
+        "siren",
+        "screaming",
+        "crying",
+    }
+)
 
 
 def _group_to_prompts(group: str) -> list[str]:
@@ -52,25 +54,65 @@ def _group_to_prompts(group: str) -> list[str]:
         "dog_bark": ["a dog barking"],
         "cat_meow": ["a cat meowing"],
         "crying": ["a baby crying", "someone crying"],
-        "speech": ["a voice speaking nearby", "someone talking on the phone", "casual conversation in a living room", "people having a conversation at home"],
+        "speech": [
+            "a voice speaking nearby",
+            "someone talking on the phone",
+            "casual conversation in a living room",
+            "people having a conversation at home",
+        ],
         "cough_sneeze": ["a person coughing", "someone sneezing"],
         "footsteps": ["footsteps walking"],
         "doorbell": ["a doorbell ringing"],
         "knock": ["someone knocking on a door"],
         "door": ["a door opening or closing", "a door slamming"],
         "cabinet": ["a cupboard or drawer opening"],
-        "wind": ["turbulent wind noise outdoors", "wind buffeting an outdoor microphone", "wind blowing against a building", "heavy wind blowing", "a windy day outside"],
+        "wind": [
+            "turbulent wind noise outdoors",
+            "wind buffeting an outdoor microphone",
+            "wind blowing against a building",
+            "heavy wind blowing",
+            "a windy day outside",
+        ],
         "rain_storm": ["rain falling", "a thunderstorm"],
-        "music": ["a song playing in the background", "ambient background music", "background music from a speaker", "music coming from a TV or speaker"],
+        "music": [
+            "a song playing in the background",
+            "ambient background music",
+            "background music from a speaker",
+            "music coming from a TV or speaker",
+        ],
         "vehicle": ["a vehicle driving", "a car passing by"],
-        "car_horn": ["a loud car horn blaring outside", "a vehicle horn honking on the street", "a car horn honking"],
+        "car_horn": [
+            "a loud car horn blaring outside",
+            "a vehicle horn honking on the street",
+            "a car horn honking",
+        ],
         "aircraft": ["an airplane flying overhead", "a jet engine"],
-        "vacuum_cleaner": ["a vacuum cleaner running", "an autonomous vacuum cleaner operating", "a robot vacuum motor whine", "a constant mechanical humming from a vacuum", "a robotic vacuum rolling on the floor", "a continuous droning motor hum", "a roborock robot vacuum cleaning"],
+        "vacuum_cleaner": [
+            "a vacuum cleaner running",
+            "an autonomous vacuum cleaner operating",
+            "a robot vacuum motor whine",
+            "a constant mechanical humming from a vacuum",
+            "a robotic vacuum rolling on the floor",
+            "a continuous droning motor hum",
+            "a roborock robot vacuum cleaning",
+        ],
         "water_running": ["water running from a faucet", "water splashing"],
-        "kitchen_appliance": ["dishes clanking in a kitchen", "plates and silverware clattering", "a blender running in a kitchen", "a microwave beeping", "cooking sounds with pots and pans"],
+        "kitchen_appliance": [
+            "dishes clanking in a kitchen",
+            "plates and silverware clattering",
+            "a blender running in a kitchen",
+            "a microwave beeping",
+            "cooking sounds with pots and pans",
+        ],
         "power_tools": ["a power tool running", "a drill or saw"],
         "alarm_beep": ["an alarm beeping", "a buzzer sounding"],
-        "hvac_mechanical": ["an air conditioning unit", "a mechanical fan running", "a furnace blower running", "a heating system running", "white noise from a fan"],
+        "hvac_mechanical": [
+            "an air conditioning unit",
+            "a mechanical fan running",
+            "a furnace blower running",
+            "a heating system running",
+            "white noise from a fan",
+        ],
         "mechanical_anomaly": ["a mechanical rattling noise", "equipment vibrating"],
         "water_leak": ["water dripping", "water trickling"],
         "electrical_anomaly": ["an electrical buzzing noise", "a humming sound"],
@@ -136,6 +178,7 @@ class CLAPVerifier:
             device=-1,  # CPU
         )
         import torchaudio
+
         self._resampler = torchaudio.transforms.Resample(AST_SAMPLE_RATE, CLAP_SAMPLE_RATE)
         self._loaded = True
         logger.info("CLAP model loaded successfully")
@@ -157,9 +200,7 @@ class CLAPVerifier:
                 if group in prompts:
                     # Extend existing prompts with custom ones (no duplicates)
                     existing = set(prompts[group])
-                    prompts[group] = prompts[group] + [
-                        t for t in texts if t not in existing
-                    ]
+                    prompts[group] = prompts[group] + [t for t in texts if t not in existing]
                 else:
                     prompts[group] = texts
         return prompts
@@ -184,7 +225,8 @@ class CLAPVerifier:
         return mapping
 
     def _score_by_group(
-        self, clap_results: list[dict],
+        self,
+        clap_results: list[dict],
     ) -> dict[str, float]:
         """Aggregate CLAP scores by group, taking max per group."""
         group_scores: dict[str, float] = {}
@@ -197,7 +239,9 @@ class CLAPVerifier:
         return group_scores
 
     def _best_clap_label(
-        self, group: str, clap_results: list[dict],
+        self,
+        group: str,
+        clap_results: list[dict],
     ) -> tuple[str, float]:
         """Get the best scoring CLAP label for a given group."""
         best_label = ""
@@ -213,6 +257,7 @@ class CLAPVerifier:
     def _resample(self, audio_16k: np.ndarray) -> np.ndarray:
         """Resample 16kHz audio to 48kHz for CLAP using torchaudio."""
         import torch
+
         tensor = torch.from_numpy(audio_16k)
         resampled = self._resampler(tensor)
         return resampled.numpy()
@@ -296,7 +341,10 @@ class CLAPVerifier:
                 if clap_score >= best_alt_score - self._config.confirm_margin:
                     logger.info(
                         "[%s] CLAP confirmed %s (clap=%.3f, ast=%.3f)",
-                        camera_name, group, clap_score, result.confidence,
+                        camera_name,
+                        group,
+                        clap_score,
+                        result.confidence,
                     )
                     verified_results.append(
                         replace(
@@ -310,8 +358,12 @@ class CLAPVerifier:
                 else:
                     logger.info(
                         "[%s] CLAP margin rejected %s (clap=%.3f, alt=%s=%.3f, margin=%.2f)",
-                        camera_name, group, clap_score,
-                        best_alt_group, best_alt_score, self._config.confirm_margin,
+                        camera_name,
+                        group,
+                        clap_score,
+                        best_alt_group,
+                        best_alt_score,
+                        self._config.confirm_margin,
                     )
                     # Fall through to unverified path
 
@@ -326,8 +378,12 @@ class CLAPVerifier:
             ):
                 logger.info(
                     "[%s] CLAP suppressed %s (clap=%.3f, alt=%s=%.3f, ast=%.3f)",
-                    camera_name, group, clap_score,
-                    best_alt_group, best_alt_score, result.confidence,
+                    camera_name,
+                    group,
+                    clap_score,
+                    best_alt_group,
+                    best_alt_score,
+                    result.confidence,
                 )
                 self._last_suppressed.append(
                     replace(
@@ -342,7 +398,10 @@ class CLAPVerifier:
             # Unverified: passes through with flag
             logger.debug(
                 "[%s] CLAP unverified %s (clap=%.3f, ast=%.3f)",
-                camera_name, group, clap_score, result.confidence,
+                camera_name,
+                group,
+                clap_score,
+                result.confidence,
             )
             verified_results.append(
                 replace(
@@ -365,7 +424,10 @@ class CLAPVerifier:
 
                 logger.info(
                     "[%s] CLAP discovered %s (clap=%.3f, label=%s)",
-                    camera_name, group, score, clap_label,
+                    camera_name,
+                    group,
+                    score,
+                    clap_label,
                 )
                 verified_results.append(
                     ClassificationResult(

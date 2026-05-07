@@ -210,6 +210,7 @@ class TestShouldUseResolver:
 
     def test_resolves_just_below_fast_reconnect_threshold(self):
         from src.stream_manager import FAST_RECONNECT_THRESHOLD
+
         stream = _make_stream()
         stream._consecutive_failures = FAST_RECONNECT_THRESHOLD - 1
         stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD - 1
@@ -219,6 +220,7 @@ class TestShouldUseResolver:
         """Pure connect failures must always re-resolve — they indicate stale
         Scrypted URLs, and skipping resolver would wedge us on the dead URL."""
         from src.stream_manager import FAST_RECONNECT_THRESHOLD
+
         stream = _make_stream()
         stream._consecutive_failures = FAST_RECONNECT_THRESHOLD * 3
         stream._consecutive_short_streams = 0
@@ -226,6 +228,7 @@ class TestShouldUseResolver:
 
     def test_skips_resolver_at_fast_reconnect_threshold(self):
         from src.stream_manager import FAST_RECONNECT_THRESHOLD
+
         stream = _make_stream()
         stream._consecutive_failures = FAST_RECONNECT_THRESHOLD
         stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD
@@ -237,6 +240,7 @@ class TestShouldUseResolver:
             FAST_RECONNECT_RESOLVER_INTERVAL,
             FAST_RECONNECT_THRESHOLD,
         )
+
         stream = _make_stream()
         stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD
         # sample values that are above threshold but not on the refresh interval
@@ -248,12 +252,11 @@ class TestShouldUseResolver:
             FAST_RECONNECT_RESOLVER_INTERVAL * 2 + 3,
         ):
             stream._consecutive_failures = n
-            assert stream._should_use_resolver() is False, (
-                f"expected skip at cf={n}"
-            )
+            assert stream._should_use_resolver() is False, f"expected skip at cf={n}"
 
     def test_refreshes_at_interval_boundary(self):
         from src.stream_manager import FAST_RECONNECT_RESOLVER_INTERVAL, FAST_RECONNECT_THRESHOLD
+
         stream = _make_stream()
         stream._consecutive_short_streams = FAST_RECONNECT_THRESHOLD
         for n in (
@@ -262,9 +265,7 @@ class TestShouldUseResolver:
             FAST_RECONNECT_RESOLVER_INTERVAL * 10,
         ):
             stream._consecutive_failures = n
-            assert stream._should_use_resolver() is True, (
-                f"expected refresh at cf={n}"
-            )
+            assert stream._should_use_resolver() is True, f"expected refresh at cf={n}"
 
 
 class TestJudgeTaskLifecycle:
@@ -278,6 +279,7 @@ class TestJudgeTaskLifecycle:
     def test_stop_cancels_tracked_judge_tasks(self):
         async def _run():
             stream = _make_stream()
+
             # Simulate a pending judge task
             async def slow_work():
                 await asyncio.sleep(60)
@@ -622,7 +624,11 @@ class TestStreamManagerStatus:
         assert mgr.status() == []
 
     def test_status_multiple_cameras_order(self):
-        cameras = [_make_camera(name="alpha"), _make_camera(name="beta"), _make_camera(name="gamma")]
+        cameras = [
+            _make_camera(name="alpha"),
+            _make_camera(name="beta"),
+            _make_camera(name="gamma"),
+        ]
         mgr = StreamManager(
             cameras=cameras,
             classifier=MagicMock(),
@@ -656,12 +662,14 @@ class TestCameraStreamResolverParams:
     def test_no_auto_discovery_param(self):
         """auto_discovery parameter should no longer exist on CameraStream."""
         import inspect
+
         sig = inspect.signature(CameraStream.__init__)
         assert "auto_discovery" not in sig.parameters
 
     def test_no_go2rtc_stream_in_camera_config(self):
         """go2rtc_stream field should no longer exist on CameraConfig."""
         import dataclasses
+
         field_names = {f.name for f in dataclasses.fields(CameraConfig)}
         assert "go2rtc_stream" not in field_names
 
@@ -726,7 +734,7 @@ class TestSimplifiedRetry:
 
     def test_no_discovering_state_in_run_loop(self):
         """CameraStream should not enter DISCOVERING state — it's been removed."""
-        stream = _make_stream()
+        _make_stream()
         # DISCOVERING should no longer exist as a state
         assert not hasattr(StreamState, "DISCOVERING")
 
@@ -767,7 +775,9 @@ class TestStreamDeathEventSuppression:
 
         # Failure count just past the threshold — not on a suppression interval boundary
         failure_count = LOG_SUPPRESSION_THRESHOLD + 2
-        assert failure_count % LOG_SUPPRESSION_INTERVAL != 0, "Pick a count that is NOT on the interval"
+        assert failure_count % LOG_SUPPRESSION_INTERVAL != 0, (
+            "Pick a count that is NOT on the interval"
+        )
 
         # The event should NOT fire for this failure count
         should_emit = (
@@ -781,10 +791,7 @@ class TestStreamDeathEventSuppression:
         from src.stream_manager import LOG_SUPPRESSION_INTERVAL
 
         failure_count = LOG_SUPPRESSION_INTERVAL
-        should_emit = (
-            failure_count <= 3
-            or failure_count % LOG_SUPPRESSION_INTERVAL == 0
-        )
+        should_emit = failure_count <= 3 or failure_count % LOG_SUPPRESSION_INTERVAL == 0
         assert should_emit is True
 
     def test_stream_death_event_emits_for_first_failures(self):

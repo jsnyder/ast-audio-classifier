@@ -20,9 +20,8 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
-
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from .audio_pipeline import AmbientMonitor, compute_spectral_flatness, read_audio_clip, start_ffmpeg
 from .clap_verifier import CLAPVerifier
@@ -30,7 +29,6 @@ from .classifier import ASTClassifier
 from .config import CameraConfig, GroupConfig
 from .mqtt_publisher import MqttPublisher
 from .openobserve import log_event
-
 from .url_resolver import ScryptedApiResolver
 
 if TYPE_CHECKING:
@@ -48,7 +46,7 @@ STABLE_STREAM_SECONDS = 30  # stream must last this long to be considered stable
 LOG_SUPPRESSION_THRESHOLD = 3  # always log first N failures, then suppress
 STUCK_THRESHOLD_SECONDS = 1800  # 30 minutes of continuous failure → stuck
 LOG_SUPPRESSION_INTERVAL = 100  # only log every Nth failure after initial burst
-FAST_RECONNECT_THRESHOLD = 5   # after this many consecutive short streams, switch to fast reconnect
+FAST_RECONNECT_THRESHOLD = 5  # after this many consecutive short streams, switch to fast reconnect
 FAST_RECONNECT_INTERVAL = 1.0  # seconds between reconnects in fast-reconnect mode
 FAST_RECONNECT_RESOLVER_INTERVAL = 10  # re-resolve URL every N failures in fast-reconnect mode
 
@@ -147,10 +145,12 @@ class CameraStream:
         # Build adaptive threshold closure if enabled
         self._threshold_fn = None
         if camera.adaptive_threshold:
+
             def _adaptive_fn() -> float:
                 return self._ambient.get_adaptive_threshold(
                     camera.db_threshold, camera.adaptive_margin_db
                 )
+
             self._threshold_fn = _adaptive_fn
 
     @property
@@ -246,9 +246,7 @@ class CameraStream:
 
     def start(self) -> asyncio.Task:
         """Start the stream processing task."""
-        self._task = asyncio.create_task(
-            self._run(), name=f"stream-{self._camera.name}"
-        )
+        self._task = asyncio.create_task(self._run(), name=f"stream-{self._camera.name}")
         return self._task
 
     async def stop(self) -> None:
@@ -282,16 +280,18 @@ class CameraStream:
                 logger.debug("No SUPERVISOR_TOKEN, skipping stuck notification")
                 return
 
-            data = json.dumps({
-                "title": f"AST Audio: {self._camera.name} stream stuck",
-                "message": (
-                    f"Camera **{self._camera.name}** audio stream has been failing "
-                    f"for over {STUCK_THRESHOLD_SECONDS // 60} minutes "
-                    f"({self._total_failures} failures). "
-                    f"Check Scrypted — may need a service restart."
-                ),
-                "notification_id": f"ast_stream_stuck_{self._camera.name}",
-            }).encode()
+            data = json.dumps(
+                {
+                    "title": f"AST Audio: {self._camera.name} stream stuck",
+                    "message": (
+                        f"Camera **{self._camera.name}** audio stream has been failing "
+                        f"for over {STUCK_THRESHOLD_SECONDS // 60} minutes "
+                        f"({self._total_failures} failures). "
+                        f"Check Scrypted — may need a service restart."
+                    ),
+                    "notification_id": f"ast_stream_stuck_{self._camera.name}",
+                }
+            ).encode()
 
             req = Request(
                 "http://supervisor/core/api/services/persistent_notification/create",
@@ -318,9 +318,11 @@ class CameraStream:
             if not token:
                 return
 
-            data = json.dumps({
-                "notification_id": f"ast_stream_stuck_{self._camera.name}",
-            }).encode()
+            data = json.dumps(
+                {
+                    "notification_id": f"ast_stream_stuck_{self._camera.name}",
+                }
+            ).encode()
 
             req = Request(
                 "http://supervisor/core/api/services/persistent_notification/dismiss",
@@ -334,7 +336,9 @@ class CameraStream:
             await asyncio.to_thread(urlopen, req, timeout=5)
             logger.info("[%s] Cleared stuck notification", self._camera.name)
         except Exception:
-            logger.debug("[%s] Failed to clear stuck notification", self._camera.name, exc_info=True)
+            logger.debug(
+                "[%s] Failed to clear stuck notification", self._camera.name, exc_info=True
+            )
 
     async def _run(self) -> None:
         """Main loop: connect, stream, classify, reconnect on failure."""
@@ -354,9 +358,7 @@ class CameraStream:
             try:
                 self._state = StreamState.CONNECTING
                 url = await self._resolve_connect_url()
-                safe_url = re.sub(
-                    r"://([^:]+):([^@]+)@", r"://\1:***@", url
-                )
+                safe_url = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", url)
                 logger.info("[%s] Connecting to %s", self._camera.name, safe_url)
 
                 self._process = await start_ffmpeg(
@@ -423,8 +425,10 @@ class CameraStream:
                 if self._failure_start == 0.0:
                     self._failure_start = time.monotonic()
                 # Rate-limit failure logs: always log first few, then every Nth
-                if (self._total_failures <= LOG_SUPPRESSION_THRESHOLD
-                        or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
+                if (
+                    self._total_failures <= LOG_SUPPRESSION_THRESHOLD
+                    or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0
+                ):
                     if reached_streaming:
                         logger.warning(
                             "[%s] Stream died after %.1fs (< %ds), failure %d (total: %d)",
@@ -445,13 +449,17 @@ class CameraStream:
                     logger.warning(
                         "[%s] Suppressing repeated failure logs (next at %d)",
                         self._camera.name,
-                        self._total_failures - (self._total_failures % LOG_SUPPRESSION_INTERVAL) + LOG_SUPPRESSION_INTERVAL,
+                        self._total_failures
+                        - (self._total_failures % LOG_SUPPRESSION_INTERVAL)
+                        + LOG_SUPPRESSION_INTERVAL,
                     )
                 # Ship structured event on the same cadence as failure logs.
                 # Differentiate real stream deaths (reached STREAMING) from connect
                 # failures so we can diagnose resolver/ffmpeg-startup issues separately.
-                if (self._total_failures <= LOG_SUPPRESSION_THRESHOLD
-                        or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
+                if (
+                    self._total_failures <= LOG_SUPPRESSION_THRESHOLD
+                    or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0
+                ):
                     log_event(
                         "stream_death" if reached_streaming else "stream_connect_failed",
                         camera=self._camera.name,
@@ -509,8 +517,7 @@ class CameraStream:
                 if not self._is_stuck:
                     self._state = StreamState.BACKOFF
                 # Rate-limit reconnect log in stuck/high-failure states
-                if (not self._is_stuck
-                        or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0):
+                if not self._is_stuck or self._total_failures % LOG_SUPPRESSION_INTERVAL == 0:
                     logger.info(
                         "[%s] Reconnecting in %ds%s (total failures: %d)",
                         self._camera.name,
@@ -521,9 +528,7 @@ class CameraStream:
                 await asyncio.sleep(self._backoff)
                 self._backoff = min(self._backoff * 2, MAX_BACKOFF)
 
-    async def _run_judge(
-        self, audio: object, classifications: list
-    ) -> None:
+    async def _run_judge(self, audio: object, classifications: list) -> None:
         """Run LLM judge with back-pressure semaphore."""
         async with self._judge_semaphore:
             await self._llm_judge.evaluate(audio, classifications, self._camera.name)
@@ -564,12 +569,13 @@ class CameraStream:
                 continue
 
             # Spectral flatness check: skip pure tonal artifacts (codec/AGC)
-            FLATNESS_ARTIFACT_THRESHOLD = 0.05
+            flatness_artifact_threshold = 0.05
             flatness = compute_spectral_flatness(audio)
-            if flatness < FLATNESS_ARTIFACT_THRESHOLD:
+            if flatness < flatness_artifact_threshold:
                 logger.debug(
                     "[%s] Skipping tonal artifact (flatness=%.4f)",
-                    self._camera.name, flatness,
+                    self._camera.name,
+                    flatness,
                 )
                 log_event(
                     "artifact_skipped",
@@ -586,7 +592,9 @@ class CameraStream:
                 for group, base_threshold in self._group_thresholds.items():
                     mod = self._weather_prior.get_threshold_modifier(group)
                     if mod != 0.0:
-                        effective_group_thresholds[group] = max(0.05, min(0.95, base_threshold + mod))
+                        effective_group_thresholds[group] = max(
+                            0.05, min(0.95, base_threshold + mod)
+                        )
 
             # Classify with semaphore (one inference at a time)
             async with self._semaphore:
@@ -604,9 +612,9 @@ class CameraStream:
                     # Fetch confused groups for confounder-aware CLAP
                     confused: frozenset[str] | None = None
                     if self._confounder_monitor:
-                        confused = self._confounder_monitor.get_confused_groups(
-                            self._camera.name
-                        ) or None
+                        confused = (
+                            self._confounder_monitor.get_confused_groups(self._camera.name) or None
+                        )
                     classifications = await asyncio.to_thread(
                         self._clap_verifier.verify,
                         audio,
@@ -619,9 +627,7 @@ class CameraStream:
 
             # Tag classifications with confounder context
             if classifications and self._confounder_monitor:
-                confused = self._confounder_monitor.get_confused_groups(
-                    self._camera.name
-                )
+                confused = self._confounder_monitor.get_confused_groups(self._camera.name)
                 if confused:
                     tagged = []
                     for cls_result in classifications:

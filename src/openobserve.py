@@ -56,9 +56,7 @@ class OpenObserveHandler(logging.Handler):
 
         self._queue: Queue[dict] = Queue(maxsize=1000)
         self._shutdown = threading.Event()
-        self._thread = threading.Thread(
-            target=self._flush_loop, daemon=True, name="oo-flush"
-        )
+        self._thread = threading.Thread(target=self._flush_loop, daemon=True, name="oo-flush")
         self._thread.start()
         atexit.register(self.close)
 

@@ -30,23 +30,45 @@ class TestStressTierWeights:
     """All 31 label groups map to expected ADHD/autism-calibrated tiers."""
 
     # HIGH STARTLE / SENSITIZATION (3.0)
-    HIGH_GROUPS = frozenset({
-        "dog_bark", "screaming", "crying", "siren",
-        "alarm_beep", "glass_break", "gunshot_explosion",
-    })
+    HIGH_GROUPS = frozenset(
+        {
+            "dog_bark",
+            "screaming",
+            "crying",
+            "siren",
+            "alarm_beep",
+            "glass_break",
+            "gunshot_explosion",
+        }
+    )
     # FOCUS DISRUPTION / UNPREDICTABLE (2.5)
-    FOCUS_DISRUPTION_GROUPS = frozenset({
-        "speech", "knock", "doorbell",
-    })
+    FOCUS_DISRUPTION_GROUPS = frozenset(
+        {
+            "speech",
+            "knock",
+            "doorbell",
+        }
+    )
     # LOUD BUT PREDICTABLE (1.2)
-    LOUD_PREDICTABLE_GROUPS = frozenset({
-        "vacuum_cleaner", "power_tools", "car_horn", "music",
-    })
+    LOUD_PREDICTABLE_GROUPS = frozenset(
+        {
+            "vacuum_cleaner",
+            "power_tools",
+            "car_horn",
+            "music",
+        }
+    )
     # BACKGROUND / MILD (0.4)
-    BACKGROUND_GROUPS = frozenset({
-        "footsteps", "door", "cabinet", "kitchen_appliance",
-        "vehicle", "aircraft",
-    })
+    BACKGROUND_GROUPS = frozenset(
+        {
+            "footsteps",
+            "door",
+            "cabinet",
+            "kitchen_appliance",
+            "vehicle",
+            "aircraft",
+        }
+    )
     # STIMMING / MASKING (-0.5)
     CALMING_GROUPS = frozenset({"rain_storm", "hvac_mechanical", "water_running"})
 
@@ -143,10 +165,12 @@ class TestAmbientComponent:
     def test_max_across_cameras(self):
         """Should use the max across cameras, not average."""
         scorer = NoiseStressScorer()
-        result = scorer.compute({
-            "quiet_cam": {"ema_db": QUIET_FLOOR_DB},
-            "loud_cam": {"ema_db": LOUD_CEILING_DB},
-        })
+        result = scorer.compute(
+            {
+                "quiet_cam": {"ema_db": QUIET_FLOOR_DB},
+                "loud_cam": {"ema_db": LOUD_CEILING_DB},
+            }
+        )
         assert result["ambient_component"] == 100.0
 
     def test_indoor_multiplier(self):

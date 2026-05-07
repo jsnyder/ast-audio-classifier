@@ -135,12 +135,22 @@ class TestBuildPrompt:
         judge = LLMJudge(judge_config)
         results = [
             ClassificationResult(
-                label="Dog", group="dog_bark", confidence=0.85,
-                top_5=[], db_level=-25.0, clap_verified=True, clap_score=0.72,
+                label="Dog",
+                group="dog_bark",
+                confidence=0.85,
+                top_5=[],
+                db_level=-25.0,
+                clap_verified=True,
+                clap_score=0.72,
             ),
             ClassificationResult(
-                label="Cat", group="cat_meow", confidence=0.45,
-                top_5=[], db_level=-25.0, clap_verified=False, clap_score=0.18,
+                label="Cat",
+                group="cat_meow",
+                confidence=0.45,
+                top_5=[],
+                db_level=-25.0,
+                clap_verified=False,
+                clap_score=0.18,
             ),
         ]
         prompt = judge._build_prompt(results, "backyard")
@@ -182,15 +192,19 @@ class TestStripMarkdown:
 class TestParseResponse:
     def test_valid_json(self, judge_config):
         judge = LLMJudge(judge_config)
-        response_text = json.dumps({
-            "verdicts": [{
-                "group": "dog_bark",
-                "verdict": "correct",
-                "actual_sound": "a dog barking loudly",
-                "confidence": 0.95,
-                "notes": "Clear bark audio",
-            }]
-        })
+        response_text = json.dumps(
+            {
+                "verdicts": [
+                    {
+                        "group": "dog_bark",
+                        "verdict": "correct",
+                        "actual_sound": "a dog barking loudly",
+                        "confidence": 0.95,
+                        "notes": "Clear bark audio",
+                    }
+                ]
+            }
+        )
         verdicts = judge._parse_response(response_text)
         assert len(verdicts) == 1
         assert verdicts[0]["verdict"] == "correct"
@@ -217,12 +231,14 @@ class TestParseResponse:
     def test_single_verdict_not_in_list(self, judge_config):
         """Handle LLM returning a single verdict object instead of a list."""
         judge = LLMJudge(judge_config)
-        response_text = json.dumps({
-            "verdict": "correct",
-            "actual_sound": "dog bark",
-            "confidence": 0.9,
-            "notes": "clear bark",
-        })
+        response_text = json.dumps(
+            {
+                "verdict": "correct",
+                "actual_sound": "dog bark",
+                "confidence": 0.9,
+                "notes": "clear bark",
+            }
+        )
         verdicts = judge._parse_response(response_text)
         assert len(verdicts) == 1
         assert verdicts[0]["verdict"] == "correct"
@@ -230,9 +246,7 @@ class TestParseResponse:
     def test_confidence_as_string_coerced_to_zero(self, judge_config):
         """LLM may return confidence as a string — should default to 0.0."""
         judge = LLMJudge(judge_config)
-        response_text = json.dumps({
-            "verdicts": [{"verdict": "correct", "confidence": "high"}]
-        })
+        response_text = json.dumps({"verdicts": [{"verdict": "correct", "confidence": "high"}]})
         verdicts = judge._parse_response(response_text)
         assert verdicts[0]["confidence"] == 0.0
         assert isinstance(verdicts[0]["confidence"], float)
@@ -240,12 +254,26 @@ class TestParseResponse:
     def test_verdicts_matched_by_group_name(self, judge_config):
         """Verdicts should be matchable by group name, not position."""
         judge = LLMJudge(judge_config)
-        response_text = json.dumps({
-            "verdicts": [
-                {"group": "cat_meow", "verdict": "incorrect", "actual_sound": "tv", "confidence": 0.8, "notes": "tv audio"},
-                {"group": "dog_bark", "verdict": "correct", "actual_sound": "bark", "confidence": 0.9, "notes": "clear"},
-            ]
-        })
+        response_text = json.dumps(
+            {
+                "verdicts": [
+                    {
+                        "group": "cat_meow",
+                        "verdict": "incorrect",
+                        "actual_sound": "tv",
+                        "confidence": 0.8,
+                        "notes": "tv audio",
+                    },
+                    {
+                        "group": "dog_bark",
+                        "verdict": "correct",
+                        "actual_sound": "bark",
+                        "confidence": 0.9,
+                        "notes": "clear",
+                    },
+                ]
+            }
+        )
         verdicts = judge._parse_response(response_text)
         assert len(verdicts) == 2
         assert verdicts[0]["group"] == "cat_meow"
@@ -303,18 +331,27 @@ class TestEvaluate:
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = json.dumps({
-            "verdicts": [{
-                "group": "dog_bark",
-                "verdict": "correct",
-                "actual_sound": "a dog barking",
-                "confidence": 0.9,
-                "notes": "Clear bark",
-            }]
-        })
+        mock_response.choices[0].message.content = json.dumps(
+            {
+                "verdicts": [
+                    {
+                        "group": "dog_bark",
+                        "verdict": "correct",
+                        "actual_sound": "a dog barking",
+                        "confidence": 0.9,
+                        "notes": "Clear bark",
+                    }
+                ]
+            }
+        )
 
         with (
-            patch.object(judge._client.chat.completions, "create", new_callable=AsyncMock, return_value=mock_response),
+            patch.object(
+                judge._client.chat.completions,
+                "create",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
             patch("src.llm_judge.log_event") as mock_log,
         ):
             await judge.evaluate(sample_audio, sample_results, "living_room")
@@ -328,7 +365,12 @@ class TestEvaluate:
     async def test_handles_api_error(self, judge_config, sample_audio, sample_results):
         judge = LLMJudge(judge_config)
 
-        with patch.object(judge._client.chat.completions, "create", new_callable=AsyncMock, side_effect=Exception("API timeout")):
+        with patch.object(
+            judge._client.chat.completions,
+            "create",
+            new_callable=AsyncMock,
+            side_effect=Exception("API timeout"),
+        ):
             # Should not raise — fire-and-forget semantics
             await judge.evaluate(sample_audio, sample_results, "living_room")
 
@@ -338,17 +380,26 @@ class TestEvaluate:
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = json.dumps({
-            "verdicts": [{
-                "verdict": "correct",
-                "actual_sound": "bark",
-                "confidence": 0.9,
-                "notes": "ok",
-            }]
-        })
+        mock_response.choices[0].message.content = json.dumps(
+            {
+                "verdicts": [
+                    {
+                        "verdict": "correct",
+                        "actual_sound": "bark",
+                        "confidence": 0.9,
+                        "notes": "ok",
+                    }
+                ]
+            }
+        )
 
         with (
-            patch.object(judge._client.chat.completions, "create", new_callable=AsyncMock, return_value=mock_response),
+            patch.object(
+                judge._client.chat.completions,
+                "create",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
             patch("src.llm_judge.log_event"),
         ):
             await judge.evaluate(sample_audio, sample_results, "test_cam")

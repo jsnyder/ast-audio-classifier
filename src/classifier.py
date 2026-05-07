@@ -128,11 +128,7 @@ class ASTClassifier:
             return []
 
         # raw_results is list of dicts with 'label' and 'score'
-        if (
-            isinstance(raw_results, list)
-            and raw_results
-            and isinstance(raw_results[0], list)
-        ):
+        if isinstance(raw_results, list) and raw_results and isinstance(raw_results[0], list):
             raw_results = raw_results[0]
 
         predictions = [(r["label"], r["score"]) for r in raw_results]

@@ -18,17 +18,21 @@ def _make_scrypted_stream_response(device_id: str, name: str, urls: list[str]) -
     """Build a JSON response mimicking scrypted-camera-api /stream/:deviceId."""
     streams = []
     if urls:
-        streams.append({
-            "id": "default",
-            "name": "Default",
-            "url": urls[0],
-            "urls": urls,
-        })
-    return json.dumps({
-        "id": device_id,
-        "name": name,
-        "streams": streams,
-    }).encode("utf-8")
+        streams.append(
+            {
+                "id": "default",
+                "name": "Default",
+                "url": urls[0],
+                "urls": urls,
+            }
+        )
+    return json.dumps(
+        {
+            "id": device_id,
+            "name": name,
+            "streams": streams,
+        }
+    ).encode("utf-8")
 
 
 class TestScryptedApiResolver:
@@ -38,7 +42,8 @@ class TestScryptedApiResolver:
     async def test_returns_rtsp_url_for_device(self):
         """API returns stream info -> extracts first RTSP URL."""
         body = _make_scrypted_stream_response(
-            "99", "Front Door Camera",
+            "99",
+            "Front Door Camera",
             ["rtsp://admin:pass@192.168.0.107:40004/abc123"],
         )
         resp = MagicMock()
@@ -48,7 +53,9 @@ class TestScryptedApiResolver:
         resp.read.return_value = body
 
         with patch("src.url_resolver.urlopen", return_value=resp):
-            resolver = ScryptedApiResolver("https://192.168.0.107:10443/endpoint/scrypted-camera-api/public")
+            resolver = ScryptedApiResolver(
+                "https://192.168.0.107:10443/endpoint/scrypted-camera-api/public"
+            )
             result = await resolver.resolve("99")
 
         assert result == "rtsp://admin:pass@192.168.0.107:40004/abc123"
@@ -57,7 +64,8 @@ class TestScryptedApiResolver:
     async def test_returns_first_url_from_urls_array(self):
         """When multiple URLs exist, returns urls[0] (external address)."""
         body = _make_scrypted_stream_response(
-            "865", "Living Room",
+            "865",
+            "Living Room",
             ["rtsp://admin:pass@192.168.0.107:40001/xyz", "rtsp://127.0.0.1:40001/xyz"],
         )
         resp = MagicMock()
@@ -67,7 +75,9 @@ class TestScryptedApiResolver:
         resp.read.return_value = body
 
         with patch("src.url_resolver.urlopen", return_value=resp):
-            resolver = ScryptedApiResolver("https://scrypted.local:10443/endpoint/scrypted-camera-api/public")
+            resolver = ScryptedApiResolver(
+                "https://scrypted.local:10443/endpoint/scrypted-camera-api/public"
+            )
             result = await resolver.resolve("865")
 
         assert result == "rtsp://admin:pass@192.168.0.107:40001/xyz"
@@ -112,11 +122,13 @@ class TestScryptedApiResolver:
     @pytest.mark.asyncio
     async def test_empty_streams_returns_none(self):
         """API returns device with no streams -> returns None."""
-        body = json.dumps({
-            "id": "69",
-            "name": "ESP32 Camera",
-            "streams": [],
-        }).encode()
+        body = json.dumps(
+            {
+                "id": "69",
+                "name": "ESP32 Camera",
+                "streams": [],
+            }
+        ).encode()
         resp = MagicMock()
         resp.__enter__ = MagicMock(return_value=resp)
         resp.__exit__ = MagicMock(return_value=False)
@@ -132,11 +144,13 @@ class TestScryptedApiResolver:
     @pytest.mark.asyncio
     async def test_stream_with_error_no_url_returns_none(self):
         """API returns stream with error field and no URL -> returns None."""
-        body = json.dumps({
-            "id": "117",
-            "name": "Side Door",
-            "streams": [{"id": "default", "name": "Default", "error": "Camera offline"}],
-        }).encode()
+        body = json.dumps(
+            {
+                "id": "117",
+                "name": "Side Door",
+                "streams": [{"id": "default", "name": "Default", "error": "Camera offline"}],
+            }
+        ).encode()
         resp = MagicMock()
         resp.__enter__ = MagicMock(return_value=resp)
         resp.__exit__ = MagicMock(return_value=False)

@@ -298,7 +298,9 @@ class TestStartFfmpegHPF:
 
                 cmd = mock_exec.call_args[0]
                 af_idx = cmd.index("-af")
-                assert cmd[af_idx + 1] == f"highpass=f={freq},alimiter=limit=0.95:attack=5:release=50"
+                assert (
+                    cmd[af_idx + 1] == f"highpass=f={freq},alimiter=limit=0.95:attack=5:release=50"
+                )
 
 
 def _make_pcm_chunk(amplitude: int = 10) -> bytes:

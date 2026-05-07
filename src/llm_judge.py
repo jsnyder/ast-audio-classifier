@@ -70,9 +70,7 @@ class LLMJudge:
             wf.writeframes(audio_int16.tobytes())
         return buf.getvalue()
 
-    def _save_wav(
-        self, audio_16k: np.ndarray, camera_name: str, group: str
-    ) -> tuple[str, bytes]:
+    def _save_wav(self, audio_16k: np.ndarray, camera_name: str, group: str) -> tuple[str, bytes]:
         """Save float32 audio as a 16-bit PCM WAV file.
 
         Returns (path, wav_bytes) so the caller can reuse the bytes for the API.
@@ -136,9 +134,7 @@ class LLMJudge:
         except OSError:
             logger.debug("Failed to write sidecar: %s", sidecar_path)
 
-    def _build_prompt(
-        self, results: list[ClassificationResult], camera_name: str
-    ) -> str:
+    def _build_prompt(self, results: list[ClassificationResult], camera_name: str) -> str:
         """Build the evaluation prompt with AST/CLAP context."""
         classifications = []
         for r in results:
@@ -184,13 +180,15 @@ Respond ONLY with valid JSON, no markdown formatting."""
         try:
             data = json.loads(self._strip_markdown(response_text))
         except (json.JSONDecodeError, TypeError):
-            return [{
-                "group": "unknown",
-                "verdict": "error",
-                "actual_sound": "unknown",
-                "confidence": 0.0,
-                "notes": f"Failed to parse LLM response: {response_text[:200]}",
-            }]
+            return [
+                {
+                    "group": "unknown",
+                    "verdict": "error",
+                    "actual_sound": "unknown",
+                    "confidence": 0.0,
+                    "notes": f"Failed to parse LLM response: {response_text[:200]}",
+                }
+            ]
 
         # Handle both {"verdicts": [...]} and single-object responses
         if isinstance(data, dict):
@@ -198,25 +196,29 @@ Respond ONLY with valid JSON, no markdown formatting."""
         elif isinstance(data, list):
             verdicts_raw = data
         else:
-            return [{
-                "group": "unknown",
-                "verdict": "error",
-                "actual_sound": "unknown",
-                "confidence": 0.0,
-                "notes": f"Unexpected response format: {type(data).__name__}",
-            }]
+            return [
+                {
+                    "group": "unknown",
+                    "verdict": "error",
+                    "actual_sound": "unknown",
+                    "confidence": 0.0,
+                    "notes": f"Unexpected response format: {type(data).__name__}",
+                }
+            ]
 
         verdicts = []
         for v in verdicts_raw:
             raw_conf = v.get("confidence", 0.0)
             confidence = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
-            verdicts.append({
-                "group": v.get("group", "unknown"),
-                "verdict": v.get("verdict", "unknown"),
-                "actual_sound": v.get("actual_sound", "unknown"),
-                "confidence": confidence,
-                "notes": v.get("notes", ""),
-            })
+            verdicts.append(
+                {
+                    "group": v.get("group", "unknown"),
+                    "verdict": v.get("verdict", "unknown"),
+                    "actual_sound": v.get("actual_sound", "unknown"),
+                    "confidence": confidence,
+                    "notes": v.get("notes", ""),
+                }
+            )
 
         return verdicts
 
@@ -227,10 +229,7 @@ Respond ONLY with valid JSON, no markdown formatting."""
             return
 
         try:
-            entries = [
-                e for e in os.scandir(clip_dir)
-                if e.name.endswith(".wav") and e.is_file()
-            ]
+            entries = [e for e in os.scandir(clip_dir) if e.name.endswith(".wav") and e.is_file()]
         except OSError:
             return
 
@@ -345,6 +344,4 @@ Respond ONLY with valid JSON, no markdown formatting."""
             )
 
         except Exception:
-            logger.warning(
-                "[%s] LLM judge evaluation failed", camera_name, exc_info=True
-            )
+            logger.warning("[%s] LLM judge evaluation failed", camera_name, exc_info=True)
