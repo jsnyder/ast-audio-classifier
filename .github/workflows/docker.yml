@@ -1,0 +1,44 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "Dockerfile"
+      - "pyproject.toml"
+      - "src/**"
+      - "run.sh"
+      - ".github/workflows/docker.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "Dockerfile"
+      - "pyproject.toml"
+      - "src/**"
+      - "run.sh"
+      - ".github/workflows/docker.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build (skip model download)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: SKIP_MODEL_DOWNLOAD=1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

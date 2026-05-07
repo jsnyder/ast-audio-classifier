@@ -31,13 +31,13 @@ RUN uv pip install --system --no-cache \
     torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
     && uv pip install --system --no-cache -e .
 
-# Pre-download AST model at build time (~350MB)
-# This avoids runtime downloads and makes the image air-gapped compatible
-RUN python -c "from transformers import pipeline; pipeline('audio-classification', model='MIT/ast-finetuned-audioset-10-10-0.4593', device=-1)"
-
-# Pre-download CLAP model at build time (~150MB)
-# Used for zero-shot verification of AST classifications
-RUN python -c "from transformers import pipeline; pipeline('zero-shot-audio-classification', model='laion/clap-htsat-fused', device=-1)"
+# Pre-download models at build time (~500MB total)
+# Set SKIP_MODEL_DOWNLOAD=1 to skip (used in CI build verification)
+ARG SKIP_MODEL_DOWNLOAD=0
+RUN if [ "$SKIP_MODEL_DOWNLOAD" = "0" ]; then \
+    python -c "from transformers import pipeline; pipeline('audio-classification', model='MIT/ast-finetuned-audioset-10-10-0.4593', device=-1)" && \
+    python -c "from transformers import pipeline; pipeline('zero-shot-audio-classification', model='laion/clap-htsat-fused', device=-1)"; \
+    fi
 
 # Copy startup script
 COPY run.sh /
