@@ -418,8 +418,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 with wave.open(io.BytesIO(content)) as wav:
                     frames = wav.readframes(wav.getnframes())
                     framerate = wav.getframerate()
-            except (wave.Error, EOFError) as e:
-                return JSONResponse(status_code=400, content={"error": f"Invalid WAV file: {e}"})
+            except (wave.Error, EOFError):
+                return JSONResponse(status_code=400, content={"error": "Invalid WAV file"})
             audio_int16 = np.frombuffer(frames, dtype=np.int16)
             audio = audio_int16.astype(np.float32) / 32768.0
             if framerate != 16000:
